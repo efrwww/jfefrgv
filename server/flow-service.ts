@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import express from 'express';
-import {Contract,Interface,JsonRpcProvider,ZeroAddress,getAddress,keccak256} from 'ethers';
+import {Contract,Interface,JsonRpcProvider,Wallet,ZeroAddress,getAddress,keccak256} from 'ethers';
 import {z} from 'zod';
 import {config,readJSON} from './config.ts';
 import {Store} from './store.ts';
@@ -16,8 +16,10 @@ const same=(a:string,b:string)=>a.toLowerCase()===b.toLowerCase();
 const eventOrder=(a:FlowEvent,b:FlowEvent)=>a.blockNumber-b.blockNumber||a.logIndex-b.logIndex;
 const inputSchema=z.object({role:z.enum(['merchant','userA','userB']),amount:z.string().regex(/^[1-9]\d{0,29}$/),to:z.string(),requestId:z.uuid()}).strict();
 const observeSchema=z.object({txHash:z.string().regex(/^0x[0-9a-fA-F]{64}$/),role:z.enum(['merchant','userA','userB']),from:z.string(),to:z.string()}).strict();
+const faucetSchema=z.object({address:z.string()}).strict();
 export class FlowService{
   store=new Store('data/direct-flow.sqlite');syncing:Promise<void>|undefined;busy=false;closing=false;lastError='';
+  faucetClaims=new Map<string,number>();
   constructor(){
     for(const job of this.store.list<FlowJob>('jobs'))if(['investigating','reviewing'].includes(job.status))this.store.put('jobs',{...job,status:'partial',error:'服务重启中断调查，请重新核查。'});
   }
@@ -98,6 +100,14 @@ export class FlowService{
     this.store.addEvent({id:event.id,datasetId:d.id,chainId:d.chainId,address:d.token,name:event.kind,args:{from,to,amount:event.amount},txHash:event.txHash,blockNumber:event.blockNumber,blockHash:event.blockHash,timestamp:event.timestamp,transactionIndex:event.transactionIndex??0,logIndex:event.logIndex,finality:'confirmed'});
     this.store.put('evidence',{id:event.id,datasetId:d.id,chainId:d.chainId,kind:'transaction',asOfBlock:block.number,capturedAt:new Date().toISOString(),txHash:event.txHash,explorerUrl:d.chainId===677?'https://scan.botchain.ai/tx/'+event.txHash:d.chainId===968?'https://scan.bohr.life/tx/'+event.txHash:undefined,facts:{event,transactionFrom:tx.from,transactionTo:tx.to,status:'confirmed'},coverage:{complete:true,missing:[]}});
     this.store.block(d.id,block.number,block.hash);return {eventId:event.id,txHash:event.txHash,amount:event.amount,blockNumber:event.blockNumber};
+  }
+  async faucet(raw:unknown){
+    const {address}=faucetSchema.parse(raw),d=this.deployment(),to=getAddress(address);
+    if(d.chainId===31337)throw new Error('测试币领取仅用于公开测试网');
+    if(!config.faucetKey)throw new Error('测试币领取服务尚未配置');
+    const now=Date.now(),last=this.faucetClaims.get(to.toLowerCase())||0;if(now-last<24*60*60*1000)throw new Error('同一钱包每天只能领取一次测试币');
+    const provider=new JsonRpcProvider(this.rpc(d),d.chainId,{staticNetwork:true,cacheTimeout:-1});
+    try{const faucet=new Wallet(config.faucetKey,provider),token=new Contract(d.token,readJSON('shared/artifacts/GymToken.json').abi,faucet);if((await token.balanceOf(faucet.address))<config.faucetAmount)throw new Error('测试币水龙头余额不足');const tx=await token.transfer(to,config.faucetAmount);const receipt=await tx.wait(1);if(!receipt||receipt.status!==1)throw new Error('测试币发放未确认');this.faucetClaims.set(to.toLowerCase(),now);return {txHash:tx.hash,address:to,amount:config.faucetAmount.toString()};}finally{provider.destroy();}
   }
   async transfer(raw:unknown){
     const input=inputSchema.parse(raw),d=this.deployment();
@@ -185,6 +195,7 @@ export function mountFlow(app:express.Express){
   app.get('/api/flow/accounts',route(()=>service.accounts()));
   app.post('/api/flow/transfers',route(req=>service.transfer(req.body)));
   app.post('/api/flow/observe',route(req=>service.observe(req.body)));
+  app.post('/api/flow/faucet',route(req=>service.faucet(req.body)));
   app.post('/api/flow/investigations',route(req=>{const p=z.object({eventId:z.string().min(1).max(250),question:z.string().min(1).max(1000)}).strict().parse(req.body);return service.start(p.eventId,p.question);}));
   app.get('/api/flow/jobs/:id',route(req=>service.store.get('jobs',String(req.params.id))??null));
    app.get('/api/flow/reports/:id',route(req=>service.store.get('reports',String(req.params.id))??null));

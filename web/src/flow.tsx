@@ -36,6 +36,7 @@ function App(){
   const canTransfer=!unavailable&&!!data?.signingEnabled&&!!walletAddress&&walletChainId===d?.chainId&&addressValid&&amountValid&&!tooMuch;
   const chainParams=(chainId:number)=>chainId===968?{chainId:'0x3c8',chainName:'BOT Chain Test',rpcUrls:['https://rpc.bohr.life'],nativeCurrency:{name:'BOT',symbol:'BOT',decimals:18},blockExplorerUrls:['https://scan.bohr.life']}:chainId===677?{chainId:'0x2a5',chainName:'BOT Chain',rpcUrls:['https://rpc.botchain.ai'],nativeCurrency:{name:'BOT',symbol:'BOT',decimals:18},blockExplorerUrls:['https://scan.botchain.ai']}:null;
   async function connectWallet(){const ethereum=(window as any).ethereum;if(!ethereum)throw new Error('请先安装 MetaMask。');const provider=new BrowserProvider(ethereum);await provider.send('eth_requestAccounts',[]);const network=await provider.getNetwork();if(Number(network.chainId)!==d?.chainId){const params=chainParams(d?.chainId||0);if(!params)throw new Error('当前部署没有可用的钱包网络配置。');try{await ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:params.chainId}]});}catch(error:any){if(error?.code!==4902)throw error;await ethereum.request({method:'wallet_addEthereumChain',params:[params]});await ethereum.request({method:'wallet_switchEthereumChain',params:[{chainId:params.chainId}]});}}const signer=await provider.getSigner();const address=await signer.getAddress();setWallet(provider);setWalletAddress(address);setWalletChainId(Number((await provider.getNetwork()).chainId));}
+  async function claimFaucet(){if(!walletAddress||walletChainId!==d?.chainId)throw new Error('请先连接并切换到当前 BOT Chain 测试网。');const r=await api<{txHash:string;amount:string}>('/faucet',{address:walletAddress});setTransferMessage('已发放 '+r.amount+' GYM 测试币，交易：'+r.txHash);await refresh();}
   async function submit(){
     if(transferLock.current||!d||!canTransfer)return;transferLock.current=true;setTransferPending(true);setTransferError('');setTransferMessage('正在等待付款确认，请勿重复提交。');
     const key=role+':'+walletAddress.toLowerCase()+':'+amount+':'+destination.toLowerCase();
@@ -64,6 +65,7 @@ function App(){
     {!walletAddress&&<button className="secondary full-width" disabled={transferPending||unavailable} onClick={()=>void connectWallet()}>连接 MetaMask</button>}
     {walletAddress&&walletChainId!==d?.chainId&&<button className="secondary full-width" disabled={transferPending||unavailable} onClick={()=>void connectWallet()}>切换到 BOT Chain 测试网</button>}
     {walletAddress&&<p className="subtle">已连接 {shortAddress(walletAddress)} · {walletChainId===d?.chainId?'网络正确':'需要切换网络'}</p>}
+    {walletAddress&&walletChainId===d?.chainId&&<button className="link" disabled={transferPending||unavailable} onClick={()=>void (setTransferPending(true),setTransferError(''),claimFaucet().catch(e=>setTransferError((e as Error).message)).finally(()=>setTransferPending(false)))}>领取 3000 GYM 测试币（每天一次）</button>}
     {!unavailable&&!data?.signingEnabled&&<p className="subtle">当前部署未启用钱包签名。</p>}
     {d&&<details className="account-info"><summary>我的账户信息</summary><p>{d.accounts[role]}</p><button className="link" onClick={()=>void copy(d.accounts[role])}>复制账户地址</button></details>}
   </div>;

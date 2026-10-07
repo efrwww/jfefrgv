@@ -19,6 +19,7 @@ export const config={
   botchainRpc:process.env.BOTCHAIN_RPC_URL||'https://rpc.bohr.life', botchainChainId:Number(process.env.BOTCHAIN_CHAIN_ID||968),
   llmBase:process.env.LLM_BASE_URL||'https://api.deepseek.com', llmModel:process.env.LLM_MODEL||'deepseek-flash',
   llmKey:process.env.LLM_API_KEY||'', llmEnabled:process.env.LLM_ENABLED!=='false',
+  faucetKey:process.env.FAUCET_PRIVATE_KEY||'', faucetAmount:BigInt(process.env.FAUCET_AMOUNT||'3000'),
   allowedHosts:csv('ALLOWED_HOSTS',[]), allowedOrigins:csv('ALLOWED_ORIGINS',[]),
   // Automatic third-party data transmission requires a separate explicit opt-in.
   autoInvestigation:approvedAutoInvestigation(),
