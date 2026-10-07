@@ -52,7 +52,7 @@ export class FlowService{
       for(const j of this.store.list<FlowJob>('jobs',d.id))this.store.put('jobs',{...j,status:'stale',error:'链历史变化，旧调查失效。'});
     }
     const cp=this.store.checkpoint(d.id),from=Math.max(d.deploymentBlock,(cp?.blockNumber??d.deploymentBlock-1)+1);
-    if(head.number-d.deploymentBlock>20000)throw new Error('超出轻量演示索引范围，需配置长期索引器');
+    if(head.number-(cp?.blockNumber??d.deploymentBlock-1)>100000)throw new Error('未同步区块超过安全索引预算，需分批补同步');
     const logs=from<=head.number?await rpc.logs(d.token,from,head.number,[TRANSFER_TOPIC],2000):[];
     const known=this.events(d),pending:FlowEvent[]=[];
     const firstRecipients=new Set(known.filter(e=>e.kind==='withdrawal').map(e=>e.to.toLowerCase()));
@@ -68,7 +68,7 @@ export class FlowService{
     }
     this.store.transaction(()=>{
       for(const e of pending){this.store.addEvent({id:e.id,datasetId:d.id,chainId:d.chainId,address:d.token,name:e.kind,args:{from:e.from,to:e.to,amount:e.amount},txHash:e.txHash,blockNumber:e.blockNumber,blockHash:e.blockHash,timestamp:e.timestamp,transactionIndex:e.transactionIndex??0,logIndex:e.logIndex,finality:'confirmed'});this.store.put('evidence',{id:e.id,datasetId:d.id,chainId:d.chainId,kind:'event',asOfBlock:e.blockNumber,capturedAt:new Date().toISOString(),txHash:e.txHash,facts:{event:e,source:'eth_getLogs',token:d.token},coverage:{complete:true,missing:[]}});this.store.block(d.id,e.blockNumber,e.blockHash);}
-      this.store.checkpointPut(d.id,{blockNumber:head.number,blockHash:head.hash,timestamp:head.timestamp,coverageComplete:true});
+      this.store.checkpointPut(d.id,{blockNumber:head.number,blockHash:head.hash,timestamp:head.timestamp,coverageComplete:true,coverageFromBlock:d.deploymentBlock,coverageLimited:false});
     });
     this.lastError='';
     if(config.autoInvestigation)for(const event of pending)this.start(event.id,'核查这笔资金变动的原因、影响、正常解释与证据缺口。',true);
@@ -89,6 +89,7 @@ export class FlowService{
     if(input.role!=='merchant'&&!same(to,d.accounts.merchant))throw new Error('会员付款目标必须为当前商家');
     const rpc=this.readRpc(d),receipt=await rpc.call('eth_getTransactionReceipt',[input.txHash]),tx=await rpc.call('eth_getTransactionByHash',[input.txHash]);
     if(!receipt||receipt.status!=='0x1'||!tx)throw new Error('观察交易尚未确认');
+    if(!same(tx.from,from)||input.role==='merchant'&&!same(from,d.accounts.merchant))throw new Error('钱包发送方与本次账单身份不匹配');
     const block=await rpc.block(Number(BigInt(receipt.blockNumber))),iface=new Interface(readJSON('shared/artifacts/GymToken.json').abi);
     const log=receipt.logs.find((item:any)=>same(item.address,d.token)&&(()=>{try{const parsed=iface.parseLog(item);return !!parsed&&same(parsed.name,'Transfer')&&same(parsed.args.from,from)&&same(parsed.args.to,to);}catch{return false;}})());
     if(!log)throw new Error('交易中没有匹配的 GYM 转账');
