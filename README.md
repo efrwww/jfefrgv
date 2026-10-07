@@ -1,0 +1,87 @@
+# 今天链不练 Agent MVP
+
+这是“今天链不练”的 Agent 核心循环原型，面向 GCC 公共物品赛题二：以太坊链上异动调查 Agent。
+
+本版本只做调查层：会员支付和商家提现保持金额自由，检测规则只产生调查标签，不阻止交易。当前输入是已经标准化的链上账单 JSON，后续可接 Anvil、Sepolia RPC 或合约事件索引器。
+
+## 核心循环
+
+```text
+读取逐笔账单
+→ 计算确定性指标和规则信号
+→ 调用只读调查工具
+→ 追踪提现后的资金流
+→ 比较历史行为
+→ 生成备选假设
+→ 调用带 Key 的模型生成中文调查解释
+→ 校验模型引用的交易哈希
+→ 输出结构化报告
+```
+
+## 运行
+
+```powershell
+cd C:\Users\28176\jfefrgv
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+### 无模型 Key 的本地烟雾运行
+
+```powershell
+python -m agent.cli --narrator stub --output data/report.stub.json
+```
+
+### 使用 OpenAI-compatible API
+
+不要把 Key 写入代码或提交到 Git。当前 PowerShell 会话中设置：
+
+```powershell
+$env:OPENAI_API_KEY="你的 Key"
+$env:OPENAI_BASE_URL="https://api.openai.com/v1"
+$env:OPENAI_MODEL="gpt-4o-mini"
+python -m agent.cli --narrator openai --output data/report.llm.json
+```
+
+也可以使用兼容 OpenAI Chat Completions 的其他服务，只需替换 `OPENAI_BASE_URL` 和 `OPENAI_MODEL`。
+
+## RPC 接入准备
+
+核心循环不依赖 RPC，可以先使用 `data/sample_case.json` 验证流程。项目已经提供 `agent/rpc_client.py`，支持：
+
+```text
+eth_chainId
+eth_blockNumber
+eth_getTransactionReceipt
+eth_getLogs
+```
+
+设置 `RPC_URL` 后，可以先检查节点：
+
+```powershell
+python -c "from agent.rpc_client import JsonRpcClient; print(JsonRpcClient().health())"
+```
+
+下一步是把合约事件 ABI 解码为 `TransactionRecord`，保持检测器和调查 Agent 不变。
+
+## 目录
+
+```text
+agent/models.py          账单、信号、分析结果数据结构
+agent/rules.py           逐笔检测和时间窗口规则
+agent/tools.py           只读调查工具和资金流追踪
+agent/narrator.py        OpenAI-compatible 报告生成器
+agent/orchestrator.py    Agent 核心循环和证据校验
+agent/rpc_client.py      Anvil/Sepolia JSON-RPC 适配器
+agent/cli.py             命令行入口
+data/sample_case.json    可复现异动调查案例
+```
+
+## 证据安全规则
+
+- 模型只能看到结构化事实和工具返回结果。
+- 模型引用的交易哈希必须存在于已知账单中。
+- 未知资金去向必须写入 `unknowns`，不得由模型补造。
+- 风险分数表示调查优先级，不是真实概率。
+- Agent 没有发送交易、批准提现或冻结资金的工具。
