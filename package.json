@@ -25,6 +25,8 @@
     "prepare:sepolia": "node --import tsx scripts/prepare-sepolia.ts",
     "plan:sepolia": "node --import tsx scripts/deploy-sepolia.ts",
     "deploy:sepolia": "node --import tsx scripts/deploy-sepolia.ts --execute",
+    "deploy:botchain": "node --import tsx scripts/deploy-botchain.ts",
+    "deploy:botchain:execute": "node --import tsx scripts/deploy-botchain.ts --execute",
     "case:local": "node --import tsx scripts/local-anomaly.ts",
     "collect:mainnet": "node --import tsx scripts/collect-mainnet.ts --expanded",
     "verify:mainnet": "node --import tsx scripts/verify-mainnet.ts",

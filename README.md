@@ -20,6 +20,12 @@ npm run build
 vercel --prod
 ```
 
+## BOT Chain 677
+
+BOT Chain RPC 为 `https://rpc.botchain.ai`，链 ID 为 `677`，区块浏览器为 [scan.botchain.ai](https://scan.botchain.ai/)。`npm run deploy:botchain` 只做预检；确认余额后运行 `npm run deploy:botchain:execute` 才会发送交易。部署账户只保存在被忽略的 `.runtime/botchain-wallet.json`，不会写入 GitHub。执行前必须先从 [BOT Chain Faucet](https://faucet.botchain.ai/zh/basic) 领取测试 BOT，并确认 Faucet 与 RPC 对应同一网络。脚本会部署 `GymToken` 和 `GymEscrow`，然后执行一笔会员充值、一次消费确认和一笔商家提现，最后生成 `artifacts/acceptance/botchain-deployment-proof.json`，其中包含每笔交易的区块浏览器链接。
+
+当前官方页面同时将 Faucet 标为测试网、扫描器环境标为非测试网；在没有单独的 BOT Chain 主网 RPC/Chain ID 说明前，项目不会把测试 Faucet 资金或测试交易宣称为主网资产。提供独立主网 RPC 后，再新增主网部署清单。
+
 ## 本地运行
 
 已安装依赖时可运行 `npm run doctor` 检查环境，`npm run start` 一键启动，`npm run services:status` 查看归属，`npm run stop` 停止本次由启动器创建的服务。已在其他终端运行的匹配服务会复用，不会被 stop 关闭。

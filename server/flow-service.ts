@@ -21,13 +21,13 @@ export class FlowService{
     for(const job of this.store.list<FlowJob>('jobs'))if(['investigating','reviewing'].includes(job.status))this.store.put('jobs',{...job,status:'partial',error:'服务重启中断调查，请重新核查。'});
   }
   deployment():FlowDeployment{
-    const publicMode=process.env.FLOW_NETWORK==='sepolia',file='data/flow/deployment-'+(publicMode?'sepolia':'local')+'.json';
-    if(!fs.existsSync(file))throw new Error(publicMode?'Sepolia 尚未部署；本地流程可先运行。':'本地流程尚未初始化，请运行 npm run start。');
-    const d=readJSON<FlowDeployment>(file);if(d.chainId!==(publicMode?11155111:31337))throw new Error('部署网络不匹配');
+    const publicMode=process.env.FLOW_NETWORK==='sepolia'||process.env.FLOW_NETWORK==='botchain',network=process.env.FLOW_NETWORK==='botchain'?'botchain':publicMode?'sepolia':'local',file='data/flow/deployment-'+network+'.json';
+    if(!fs.existsSync(file))throw new Error(publicMode?(network==='botchain'?'BOT Chain 尚未部署；请运行 deploy:botchain。':'Sepolia 尚未部署；本地流程可先运行。'):'本地流程尚未初始化，请运行 npm run start。');
+    const d=readJSON<FlowDeployment>(file);if(d.chainId!==(network==='botchain'?677:publicMode?11155111:31337))throw new Error('部署网络不匹配');
     getAddress(d.token);for(const a of Object.values(d.accounts))getAddress(a);return d;
   }
   ensureAccounts(d:FlowDeployment){
-    const now=new Date().toISOString(),network=d.chainId===31337?'anvil':'sepolia';
+    const now=new Date().toISOString(),network=d.chainId===31337?'anvil':d.chainId===677?'botchain':'sepolia';
     const accounts:BackendAccount[]=[
       {id:d.id+':member',role:'member',displayName:'会员账户',address:getAddress(d.accounts.userA),chainId:d.chainId,network,status:'active',createdAt:now,updatedAt:now},
       {id:d.id+':merchant',role:'merchant',displayName:'商家账户',address:getAddress(d.accounts.merchant),chainId:d.chainId,network,status:'active',createdAt:now,updatedAt:now},
@@ -36,7 +36,7 @@ export class FlowService{
     return this.store.accounts().filter(a=>a.id.startsWith(d.id+':'));
   }
   accounts(){const d=this.deployment();return this.ensureAccounts(d);}
-  rpc(d:FlowDeployment){return d.chainId===31337?config.localRpc:config.sepoliaRpc;}
+  rpc(d:FlowDeployment){return d.chainId===31337?config.localRpc:d.chainId===677?config.botchainRpc:config.sepoliaRpc;}
   events(d:FlowDeployment):FlowEvent[]{return this.store.events(d.id).map(e=>({id:e.id,txHash:e.txHash,logIndex:e.logIndex,blockNumber:e.blockNumber,blockHash:e.blockHash,timestamp:e.timestamp,from:e.args.from,to:e.args.to,amount:e.args.amount,kind:e.name as FlowEvent['kind']}));}
   readRpc(d:FlowDeployment){return new ReadRpc(this.rpc(d),600,AbortSignal.timeout(30000));}
   sync(){if(this.syncing)return this.syncing;this.syncing=this.syncInner().finally(()=>{this.syncing=undefined;});return this.syncing;}
@@ -131,7 +131,7 @@ export class FlowService{
         const decoded=log?iface.parseLog(log):null;
         if(receipt.status!=='0x1'||receipt.blockHash!==chosen.blockHash||block.hash!==chosen.blockHash||!decoded||!same(decoded.args.from,chosen.from)||!same(decoded.args.to,chosen.to)||decoded.args.value.toString()!==chosen.amount)throw new Error('收据与事件不匹配');
         const id=chosen.id===event.id?receiptId:job.id+':receipt:'+chosen.id;
-         const data={evidenceId:id,chainId:d.chainId,txHash:chosen.txHash,blockNumber:chosen.blockNumber,blockHash:block.hash,status:'confirmed',transactionFrom:tx.from,transactionTo:tx.to,transfer:{from:chosen.from,to:chosen.to,amount:chosen.amount,logIndex:chosen.logIndex},gasUsed:BigInt(receipt.gasUsed).toString(),effectiveGasPrice:BigInt(receipt.effectiveGasPrice).toString(),explorerUrl:d.chainId===11155111?'https://sepolia.etherscan.io/tx/'+chosen.txHash:null,finality:'已入块；不是最终不可逆确认'};
+         const data={evidenceId:id,chainId:d.chainId,txHash:chosen.txHash,blockNumber:chosen.blockNumber,blockHash:block.hash,status:'confirmed',transactionFrom:tx.from,transactionTo:tx.to,transfer:{from:chosen.from,to:chosen.to,amount:chosen.amount,logIndex:chosen.logIndex},gasUsed:BigInt(receipt.gasUsed).toString(),effectiveGasPrice:BigInt(receipt.effectiveGasPrice).toString(),explorerUrl:d.chainId===11155111?'https://sepolia.etherscan.io/tx/'+chosen.txHash:d.chainId===677?'https://scan.botchain.ai/tx/'+chosen.txHash:null,finality:'已入块；不是最终不可逆确认'};
          this.store.put('evidence',{id,datasetId:d.id,chainId:d.chainId,kind:'transaction',asOfBlock:chosen.blockNumber,capturedAt:new Date().toISOString(),txHash:chosen.txHash,explorerUrl:data.explorerUrl||undefined,facts:data,coverage:{complete:true,missing:[]}});
          return {data,evidenceIds:[id,chosen.id]};
       }
