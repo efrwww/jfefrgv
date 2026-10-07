@@ -29,7 +29,7 @@ export function plainReport(event:FlowEvent,report:FlowReport|undefined,job:Flow
   const happened=event.kind==='payment'?`${fromName}向健身房支付了 ${event.amount} GYM，这笔付款已确认。`:event.kind==='receipt'?`健身房收到 ${event.amount} GYM，这笔收款已确认。`:`${fromName}转出了 ${event.amount} GYM，接收方是${toName}。`;
   const base:PlainReport={tone:'unknown',label:'等待检查',title:'这笔记录还没有检查结果',happened,reasons:[],nextStep:'稍后回来查看结果，也可以发起一次检查。',boundary:'这里只能核查已记录的资金变动，不能据此判断商家会不会关门。',checkedAt:report?.generatedAt??null};
   if(report?.status==='stale'||job?.status==='stale')return {...base,label:'旧结果已过期',title:'这份旧结果不能代表当前情况',reasons:['用于检查的记录已经变化，需要重新核实。'],nextStep:'重新检查后，再查看新的结果。'};
-  if(report?.status==='partial'||job?.status==='partial')return {...base,label:'检查未完成',title:'检查还没有完成，暂时不能给出判断',reasons:['付款或转出是否完成，与风险检查是否完成是两回事。此次检查未能完整结束，不代表资金没有风险。'],nextStep:'稍后重新检查，或直接向商家核实资金用途。'};
+  if(report?.status==='partial'||job?.status==='partial')return {...base,label:'核查只完成一部分',title:'已取得部分链上事实，风险判断尚未完成',reasons:['付款或转出是否完成，与风险检查是否完成是两回事。此次只完成部分核查，不代表资金没有风险。'],nextStep:'稍后重新检查，或直接向商家核实资金用途。'};
   if(!report||report.status!=='complete')return {...base,label:job?'正在检查':'等待检查',title:job?'正在检查这笔记录，请稍等':'这笔记录还没有检查结果',reasons:[job?'检查结果会自动更新，现在还不能下结论。':'尚未进行检查，不能把没有结果当作安全。']};
   const m=report.metrics,reasons:string[]=[];
   if(m.flags.some(f=>f.includes('转出达到收款')))reasons.push(`截至这笔记录，24 小时内健身房收款 ${m.receipts} GYM、转出 ${m.outflows} GYM，转出占收款的 ${percentBps(m.outflowToReceiptBps)}。需要关注的是累计转出比例，不能只看这一笔的金额。`);
@@ -47,4 +47,4 @@ export function plainReport(event:FlowEvent,report:FlowReport|undefined,job:Flow
   if(m.baselineCount<3)reasons.push('历史对照样本不足，金额是否反常还不能定量确认。');
   return {...base,...presentation,reasons};
 }
-export function plainReportText(summary:PlainReport){return ['今天链不练 · 简明检查结果',summary.label,summary.title,'','发生了什么',summary.happened,'','为什么这样提醒',...summary.reasons.map(s=>'• '+s),'','接下来怎么办',summary.nextStep,'',summary.boundary,...(summary.checkedAt?['检查时间：'+new Date(summary.checkedAt).toLocaleString('zh-CN')]:[]),'GYM 是无现金价值的演示币。本地演示不代表已接入公共以太坊。'].join('\n');}
+export function plainReportText(summary:PlainReport){return ['今天链不练 · 简明检查结果',summary.label,summary.title,'','链上已确认',summary.happened,'','这次核查得到的线索',...summary.reasons.map(s=>'• '+s),'','下一步核实',summary.nextStep,'',summary.boundary,...(summary.checkedAt?['检查时间：'+new Date(summary.checkedAt).toLocaleString('zh-CN')]:[]),'GYM 是无现金价值的演示币。本地演示不代表已接入公共以太坊。'].join('\n');}
