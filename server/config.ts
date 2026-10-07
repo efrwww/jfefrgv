@@ -7,6 +7,10 @@ function approvedAutoInvestigation(){
   if(process.env.AUTO_INVESTIGATION!==undefined)return process.env.AUTO_INVESTIGATION==='true';
   try{return JSON.parse(fs.readFileSync('data/runtime-settings.json','utf8')).automaticInvestigation===true;}catch{return false;}
 }
+function csv(name:string, fallback:string[]){
+  const value=process.env[name];
+  return value===undefined?fallback:value.split(',').map(s=>s.trim()).filter(Boolean);
+}
 export const config={
   port:Number(process.env.API_PORT||3001), webPort:Number(process.env.WEB_PORT||5173), researchPort:Number(process.env.RESEARCH_PORT||3002), localRpc:process.env.LOCAL_RPC_URL||'http://127.0.0.1:8545',
   mainnetRpc:process.env.MAINNET_RPC_URL||'https://ethereum.publicnode.com',
@@ -15,6 +19,7 @@ export const config={
   botchainRpc:process.env.BOTCHAIN_RPC_URL||'https://rpc.bohr.life', botchainChainId:Number(process.env.BOTCHAIN_CHAIN_ID||968),
   llmBase:process.env.LLM_BASE_URL||'https://api.deepseek.com', llmModel:process.env.LLM_MODEL||'deepseek-flash',
   llmKey:process.env.LLM_API_KEY||'', llmEnabled:process.env.LLM_ENABLED!=='false',
+  allowedHosts:csv('ALLOWED_HOSTS',[]), allowedOrigins:csv('ALLOWED_ORIGINS',[]),
   // Automatic third-party data transmission requires a separate explicit opt-in.
   autoInvestigation:approvedAutoInvestigation(),
 };
