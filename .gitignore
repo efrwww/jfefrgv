@@ -1,8 +1,18 @@
-.venv/
-__pycache__/
-*.py[cod]
-.env
 node_modules/
-artifacts/
-data/report*.json
-data/rpc-decoded.json
+dist/
+cache/
+data/
+.env
+.env.*
+!.env.example
+*.log
+.runtime/
+
+
+# Generated public research caches (regenerate with scripts/collect-mainnet.ts)
+cases/mainnet/*.raw.json
+cases/mainnet/*.sources.json
+cases/mainnet/*receipts-cache.json
+cases/mainnet/*index.json
+cases/mainnet/finalized-block-cache.json
+cases/mainnet/discovery.json
