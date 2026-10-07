@@ -38,11 +38,21 @@ def _in_window(
     ]
 
 
-def _balance_at(records: list[TransactionRecord], timestamp, merchant_id: str) -> Decimal:
+def _balance_at(
+    records: list[TransactionRecord],
+    timestamp,
+    merchant_id: str,
+    before_block_number: int | None = None,
+) -> Decimal:
     balance = Decimal("0")
     for record in records:
-        if record.merchant_id != merchant_id or record.timestamp >= timestamp:
+        if record.merchant_id != merchant_id:
             continue
+        if record.timestamp > timestamp:
+            continue
+        if record.timestamp == timestamp:
+            if before_block_number is None or record.block_number >= before_block_number:
+                continue
         if record.status != "success":
             continue
         if record.tx_type in {"member_payment", "refund"}:
@@ -132,7 +142,9 @@ class RuleDetector:
                             tuple(item.tx_hash for item in recent_hour),
                         )
                     )
-                current_balance = _balance_at(ordered, record.timestamp, record.merchant_id)
+                current_balance = _balance_at(
+                    ordered, record.timestamp, record.merchant_id, before_block_number=record.block_number
+                )
                 metrics["observed_escrow_balance_after"] = str(current_balance + record.amount)
 
             elif record.tx_type == "service_confirmation":
@@ -215,7 +227,9 @@ class RuleDetector:
                     )
 
             elif record.tx_type == "merchant_withdrawal":
-                before_balance = _balance_at(ordered, record.timestamp, record.merchant_id)
+                before_balance = _balance_at(
+                    ordered, record.timestamp, record.merchant_id, before_block_number=record.block_number
+                )
                 recent_withdrawals = _in_window(ordered, record, 24, {"merchant_withdrawal"})
                 recent_payments = _in_window(ordered, record, 24, {"member_payment"})
                 withdrawal_total = sum((item.amount for item in recent_withdrawals), Decimal("0"))

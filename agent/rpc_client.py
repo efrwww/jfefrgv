@@ -53,6 +53,13 @@ class JsonRpcClient:
     def transaction_receipt(self, tx_hash: str) -> dict[str, Any] | None:
         return self.call("eth_getTransactionReceipt", [tx_hash])
 
+    def transaction(self, tx_hash: str) -> dict[str, Any] | None:
+        return self.call("eth_getTransactionByHash", [tx_hash])
+
+    def block(self, block_number: int | str, full_transactions: bool = False) -> dict[str, Any] | None:
+        quantity = block_number if isinstance(block_number, str) else hex(block_number)
+        return self.call("eth_getBlockByNumber", [quantity, full_transactions])
+
     def get_logs(self, filter_params: dict[str, Any]) -> list[dict[str, Any]]:
         return self.call("eth_getLogs", [filter_params])
 

@@ -5,3 +5,4 @@ __pycache__/
 node_modules/
 artifacts/
 data/report*.json
+data/rpc-decoded.json

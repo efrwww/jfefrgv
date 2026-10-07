@@ -65,6 +65,32 @@ python -c "from agent.rpc_client import JsonRpcClient; print(JsonRpcClient().hea
 
 下一步是把合约事件 ABI 解码为 `TransactionRecord`，保持检测器和调查 Agent 不变。
 
+## RPC 事件解码器
+
+`agent/event_decoder.py` 将 `PrepaidEscrow` 的事件日志直接转成 Agent 的统一账单结构：
+
+```text
+MemberPayment          → member_payment
+ServiceConfirmed       → service_confirmation
+MerchantWithdrawal     → merchant_withdrawal
+RefundRequested        → refund
+PayoutAddressProposed  → payout_address_change
+PayoutAddressActivated → payout_address_change
+```
+
+从当前 Anvil 链读取日志：
+
+```powershell
+& "C:\Users\28176\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" `
+  -m agent.rpc_decode_cli `
+  --from-block 0 `
+  --to-block latest
+```
+
+输出是可以直接传给 `InvestigationAgent.run(...)` 的 `TransactionRecord` JSON。生产接入时只需替换 `JsonRpcClient` 的 RPC URL 和部署清单，不需要改检测规则。
+
+事件解码使用 ABI 对应的 Ethereum Keccak topic 常量，并额外读取部署清单中的 ABI 检查事件名称。区块时间、交易状态、Gas 和交易发送方通过 RPC 补齐。
+
 ## 合约 ABI 和 Anvil 部署
 
 仓库现在包含最小自由金额托管合约：
