@@ -12,7 +12,7 @@ export const config={
   mainnetRpc:process.env.MAINNET_RPC_URL||'https://ethereum.publicnode.com',
   mainnetFallbackRpc:process.env.MAINNET_FALLBACK_RPC_URL||'https://eth.drpc.org/',
   sepoliaRpc:process.env.SEPOLIA_RPC_URL||'https://ethereum-sepolia.publicnode.com',
-  botchainRpc:process.env.BOTCHAIN_RPC_URL||'https://rpc.botchain.ai',
+  botchainRpc:process.env.BOTCHAIN_RPC_URL||'https://rpc.bohr.life', botchainChainId:Number(process.env.BOTCHAIN_CHAIN_ID||968),
   llmBase:process.env.LLM_BASE_URL||'https://api.deepseek.com', llmModel:process.env.LLM_MODEL||'deepseek-flash',
   llmKey:process.env.LLM_API_KEY||'', llmEnabled:process.env.LLM_ENABLED!=='false',
   // Automatic third-party data transmission requires a separate explicit opt-in.

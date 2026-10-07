@@ -1,0 +1,27 @@
+{
+  "chainId": 968,
+  "network": "BOT Chain Test",
+  "rpcUrl": "https://rpc.bohr.life",
+  "execute": true,
+  "merchant": "0xa4C13b49A5A0Ed9781992C1a2bA4ee1e5B713f2B",
+  "accounts": {
+    "merchant": "0xa4C13b49A5A0Ed9781992C1a2bA4ee1e5B713f2B",
+    "userA": "0x781A857B8EEa43A79614e73A42ddF52f8d3c83F3",
+    "userB": "0xBddFdDa1337Ed23214efcEccb7e91a1eCE1387e8",
+    "payout": "0xAf55DcfA3aB487655D10aA23A5321F568f9A0E78",
+    "nextPayout": "0x56044f1ff373221eD4C8513e62C4EDc54049AdA7"
+  },
+  "nativeBalancesWei": {
+    "merchant": "10000000000000000000",
+    "userA": "0",
+    "userB": "0",
+    "payout": "0",
+    "nextPayout": "0"
+  },
+  "generatedAt": "2026-10-07T15:59:32.044Z",
+  "links": {
+    "explorer": "https://scan.bohr.life",
+    "faucet": "https://faucet.bohr.life",
+    "rpc": "https://rpc.bohr.life"
+  }
+}

@@ -5,10 +5,12 @@ import { ContractFactory, Interface, Wallet, parseEther, keccak256, toUtf8Bytes 
 import { config, readJSON, writeJSON } from '../server/config.ts';
 import { compile } from './compile.ts';
 
-const rpcUrl = process.env.BOTCHAIN_RPC_URL || config.botchainRpc;
+const chainId = Number(process.env.BOTCHAIN_CHAIN_ID || (process.env.BOTCHAIN_RPC_URL?.includes('bohr.life') ? '968' : '677'));
+const rpcUrl = process.env.BOTCHAIN_RPC_URL || (chainId === 968 ? 'https://rpc.bohr.life' : config.botchainRpc);
+const explorerBase = process.env.BOTCHAIN_EXPLORER_URL || (chainId === 968 ? 'https://scan.bohr.life' : 'https://scan.botchain.ai');
 const walletFile = path.resolve('.runtime/botchain-wallet.json');
 const execute = process.argv.includes('--execute');
-const explorer = (kind: 'tx' | 'address', value: string) => `https://scan.botchain.ai/${kind}/${value}`;
+const explorer = (kind: 'tx' | 'address', value: string) => `${explorerBase}/${kind}/${value}`;
 
 type SavedWallet = { chainId: number; network: string; accounts: Record<string, { address: string; privateKey: string }> };
 
@@ -22,7 +24,7 @@ function ensureWallets(): SavedWallet {
     fs.writeFileSync(walletFile, JSON.stringify({ chainId: 677, network: 'BOT Chain', accounts }, null, 2), { mode: 0o600, flag: 'wx' });
   }
   const saved = readJSON<SavedWallet>(walletFile);
-  if (saved.chainId !== 677) throw new Error('botchain-wallet.json 必须绑定 Chain ID 677');
+  if (![677, 968].includes(saved.chainId)) throw new Error('botchain-wallet.json 的 Chain ID 不受支持');
   for (const role of ['merchant', 'userA', 'userB', 'payout', 'nextPayout']) if (!saved.accounts[role]) throw new Error(`缺少账户 ${role}`);
   return saved;
 }
@@ -62,7 +64,7 @@ async function waitReceipt(hash: string, label: string) {
 async function send(wallet: Wallet, tx: { to?: string; data?: string; value?: bigint; gasLimit: bigint }, label: string) {
   const nonce = Number(BigInt(rpcCall('eth_getTransactionCount', [wallet.address, 'pending'])));
   const gasPrice = BigInt(rpcCall('eth_gasPrice', []));
-  const raw = await wallet.signTransaction({ chainId: 677, nonce, gasPrice, gasLimit: tx.gasLimit, to: tx.to, data: tx.data, value: tx.value ?? 0n });
+  const raw = await wallet.signTransaction({ chainId, nonce, gasPrice, gasLimit: tx.gasLimit, to: tx.to, data: tx.data, value: tx.value ?? 0n });
   const hash = rpcCall('eth_sendRawTransaction', [raw]);
   return waitReceipt(hash, label);
 }
@@ -70,8 +72,8 @@ async function send(wallet: Wallet, tx: { to?: string; data?: string; value?: bi
 async function main() {
   const saved = ensureWallets();
   try {
-    const chainId = Number(BigInt(rpcCall('eth_chainId')));
-    if (chainId !== 677) throw new Error(`RPC 网络不匹配：${chainId}`);
+    const actualChainId = Number(BigInt(rpcCall('eth_chainId')));
+    if (actualChainId !== chainId) throw new Error(`RPC 网络不匹配：期望 ${chainId}，实际 ${actualChainId}`);
     compile();
     const tokenArtifact = readJSON<any>('shared/artifacts/GymToken.json');
     const escrowArtifact = readJSON<any>('shared/artifacts/GymEscrow.json');
@@ -80,7 +82,7 @@ async function main() {
     const userB = new Wallet(saved.accounts.userB.privateKey);
     const balances = Object.fromEntries(Object.entries(saved.accounts).map(([role, account]) => [role, BigInt(rpcCall('eth_getBalance', [account.address, 'latest'])).toString()]));
     const publicAccounts = Object.fromEntries(Object.entries(saved.accounts).map(([role, account]) => [role, account.address]));
-    const plan = { chainId: 677, network: 'BOT Chain', rpcUrl, execute, merchant: merchant.address, accounts: publicAccounts, nativeBalancesWei: balances, generatedAt: new Date().toISOString(), links: { explorer: 'https://scan.botchain.ai', faucet: 'https://faucet.botchain.ai/zh/basic', rpc: rpcUrl } };
+    const plan = { chainId, network: chainId === 968 ? 'BOT Chain Test' : 'BOT Chain', rpcUrl, execute, merchant: merchant.address, accounts: publicAccounts, nativeBalancesWei: balances, generatedAt: new Date().toISOString(), links: { explorer: explorerBase, faucet: chainId === 968 ? 'https://faucet.bohr.life' : 'https://faucet.botchain.ai/zh/basic', rpc: rpcUrl } };
     writeJSON('artifacts/acceptance/botchain-deployment-plan.json', plan);
     console.log(JSON.stringify({ stage: 'preflight', ...plan, merchantExplorer: explorer('address', merchant.address) }));
     if (!execute) return;
@@ -118,16 +120,16 @@ async function main() {
     const tokenBalanceHex = rpcCall('eth_call', [{ to: deployedToken, data: tokenIface.encodeFunctionData('balanceOf', [escrowAddress]) }, 'latest']);
     const tokenBalance = BigInt(tokenBalanceHex);
     const proof = {
-      chainId: 677, network: 'BOT Chain', rpcUrl, token: deployedToken, escrow: escrowAddress,
+      chainId, network: chainId === 968 ? 'BOT Chain Test' : 'BOT Chain', rpcUrl, token: deployedToken, escrow: escrowAddress,
       accounts: { merchant: merchant.address, userA: userA.address, userB: userB.address, payout: saved.accounts.payout.address, nextPayout: saved.accounts.nextPayout.address },
       deploymentBlock: transactions[0].blockNumber, deploymentHash: transactions[0].hash, transactions,
-      links: { token: explorer('address', deployedToken), escrow: explorer('address', escrowAddress), merchant: explorer('address', merchant.address), userA: explorer('address', userA.address), payout: explorer('address', saved.accounts.payout.address), scan: 'https://scan.botchain.ai', bridge: 'https://bridge.botchain.ai', dex: 'https://dex.botchain.ai', wallet: 'https://wallet.botchain.ai', faucet: 'https://faucet.botchain.ai/zh/basic' },
+      links: { token: explorer('address', deployedToken), escrow: explorer('address', escrowAddress), merchant: explorer('address', merchant.address), userA: explorer('address', userA.address), payout: explorer('address', saved.accounts.payout.address), scan: explorerBase, bridge: chainId === 968 ? 'https://bridge.bohr.life' : 'https://bridge.botchain.ai', dex: chainId === 968 ? 'https://dex.bohr.life' : 'https://dex.botchain.ai', wallet: chainId === 968 ? 'https://wallet.bohr.life' : 'https://wallet.botchain.ai', faucet: chainId === 968 ? 'https://faucet.bohr.life' : 'https://faucet.botchain.ai/zh/basic' },
       verification: { tokenEscrowBalance: tokenBalance.toString(), consumedAmount: '30', merchantWithdrawn: '30', sessionKey, requestId: requestId.toString() },
       completedAt: new Date().toISOString()
     };
     writeJSON('artifacts/acceptance/botchain-deployment-proof.json', proof);
-    writeJSON('data/deployments/botchain.json', { id: `botchain-${escrowAddress.toLowerCase()}`, chainId: 677, dataOrigin: 'public-testnet', adapter: 'gym', name: 'BOT Chain 健身房演示', token: deployedToken, escrow: escrowAddress, merchant: merchant.address, payout: saved.accounts.payout.address, nextPayout: saved.accounts.nextPayout.address, users: [userA.address, userB.address], tokenSymbol: 'GYM', decimals: 0, deploymentBlock: proof.deploymentBlock, deploymentHash: proof.deploymentHash, links: proof.links });
-    writeJSON('data/flow/deployment-botchain.json', { id: `botchain-${escrowAddress.toLowerCase()}`, chainId: 677, dataOrigin: 'public-testnet', token: deployedToken, tokenSymbol: 'GYM', decimals: 0, deploymentBlock: proof.deploymentBlock, deploymentHash: proof.deploymentHash, accounts: { merchant: merchant.address, userA: userA.address, userB: userB.address, payout: saved.accounts.payout.address, nextPayout: saved.accounts.nextPayout.address } });
+    writeJSON('data/deployments/botchain.json', { id: `botchain-${escrowAddress.toLowerCase()}`, chainId, dataOrigin: 'public-testnet', adapter: 'gym', name: chainId === 968 ? 'BOT Chain Test 健身房演示' : 'BOT Chain 健身房演示', token: deployedToken, escrow: escrowAddress, merchant: merchant.address, payout: saved.accounts.payout.address, nextPayout: saved.accounts.nextPayout.address, users: [userA.address, userB.address], tokenSymbol: 'GYM', decimals: 0, deploymentBlock: proof.deploymentBlock, deploymentHash: proof.deploymentHash, links: proof.links });
+    writeJSON('data/flow/deployment-botchain.json', { id: `botchain-${escrowAddress.toLowerCase()}`, chainId, dataOrigin: 'public-testnet', token: deployedToken, escrow: escrowAddress, tokenSymbol: 'GYM', decimals: 0, deploymentBlock: proof.deploymentBlock, deploymentHash: proof.deploymentHash, accounts: { merchant: merchant.address, userA: userA.address, userB: userB.address, payout: saved.accounts.payout.address, nextPayout: saved.accounts.nextPayout.address } });
     console.log(JSON.stringify({ deployed: true, ...proof }));
   } finally { }
 }

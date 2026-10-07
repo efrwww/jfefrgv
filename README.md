@@ -20,9 +20,9 @@ npm run build
 vercel --prod
 ```
 
-## BOT Chain 677
+## BOT Chain 测试网
 
-BOT Chain RPC 为 `https://rpc.botchain.ai`，链 ID 为 `677`，区块浏览器为 [scan.botchain.ai](https://scan.botchain.ai/)。`npm run deploy:botchain` 只做预检；确认余额后运行 `npm run deploy:botchain:execute` 才会发送交易。部署账户只保存在被忽略的 `.runtime/botchain-wallet.json`，不会写入 GitHub。执行前必须先从 [BOT Chain Faucet](https://faucet.botchain.ai/zh/basic) 领取测试 BOT，并确认 Faucet 与 RPC 对应同一网络。脚本会部署 `GymToken` 和 `GymEscrow`，然后执行一笔会员充值、一次消费确认和一笔商家提现，最后生成 `artifacts/acceptance/botchain-deployment-proof.json`，其中包含每笔交易的区块浏览器链接。
+当前可核验的 BOT Chain Test 网络为 Chain ID `968`，RPC 为 `https://rpc.bohr.life`，区块浏览器为 [scan.bohr.life](https://scan.bohr.life/)。`npm run deploy:botchain` 只做预检；确认余额后运行 `npm run deploy:botchain:execute` 才会发送交易。部署账户只保存在被忽略的 `.runtime/botchain-wallet.json`，不会写入 GitHub。脚本会部署 `GymToken` 和 `GymEscrow`，然后执行一笔会员充值、一次消费确认和一笔商家提现，最后生成 `artifacts/acceptance/botchain-deployment-proof.json`，其中包含每笔交易的区块浏览器链接。若使用旧的 677 RPC，可显式设置 `BOTCHAIN_CHAIN_ID=677`、`BOTCHAIN_RPC_URL=https://rpc.botchain.ai` 和对应浏览器地址。
 
 当前官方页面同时将 Faucet 标为测试网、扫描器环境标为非测试网；在没有单独的 BOT Chain 主网 RPC/Chain ID 说明前，项目不会把测试 Faucet 资金或测试交易宣称为主网资产。提供独立主网 RPC 后，再新增主网部署清单。
 

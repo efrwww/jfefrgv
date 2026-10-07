@@ -19,7 +19,7 @@ app.use((req,res,next)=>{
   res.setHeader('X-Content-Type-Options','nosniff');next();
 });
 let activeDatasetIds=new Set<string>();
-function loadDatasets(){const active=new Set<string>();if(fs.existsSync('data/deployments'))for(const file of fs.readdirSync('data/deployments').filter(f=>f.endsWith('.json'))){const d=readJSON('data/deployments/'+file);if(![31337,11155111,677].includes(d.chainId)||d.adapter!=='gym'||!isAddress(d.token)||!isAddress(d.escrow))continue;store.put('datasets',d);active.add(d.id);}if(fs.existsSync('cases/mainnet'))for(const file of fs.readdirSync('cases/mainnet').filter(f=>f.endsWith('.manifest.json'))){const d=readJSON('cases/mainnet/'+file);store.put('datasets',d);active.add(d.id);}activeDatasetIds=active;}
+function loadDatasets(){const active=new Set<string>();if(fs.existsSync('data/deployments'))for(const file of fs.readdirSync('data/deployments').filter(f=>f.endsWith('.json'))){const d=readJSON('data/deployments/'+file);if(![31337,11155111,677,968].includes(d.chainId)||d.adapter!=='gym'||!isAddress(d.token)||!isAddress(d.escrow))continue;store.put('datasets',d);active.add(d.id);}if(fs.existsSync('cases/mainnet'))for(const file of fs.readdirSync('cases/mainnet').filter(f=>f.endsWith('.manifest.json'))){const d=readJSON('cases/mainnet/'+file);store.put('datasets',d);active.add(d.id);}activeDatasetIds=active;}
 const activeDatasets=()=>store.list<Dataset>('datasets').filter(d=>activeDatasetIds.has(d.id));
 loadDatasets();
 for(const job of store.list('jobs'))if(['running','queued'].includes(job.status))store.put('jobs',{...job,status:'failed',error:'服务重启中断任务，可重新发起。'});

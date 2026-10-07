@@ -22,12 +22,12 @@ export class FlowService{
   }
   deployment():FlowDeployment{
     const publicMode=process.env.FLOW_NETWORK==='sepolia'||process.env.FLOW_NETWORK==='botchain',network=process.env.FLOW_NETWORK==='botchain'?'botchain':publicMode?'sepolia':'local',file='data/flow/deployment-'+network+'.json';
-    if(!fs.existsSync(file))throw new Error(publicMode?(network==='botchain'?'BOT Chain 尚未部署；请运行 deploy:botchain。':'Sepolia 尚未部署；本地流程可先运行。'):'本地流程尚未初始化，请运行 npm run start。');
-    const d=readJSON<FlowDeployment>(file);if(d.chainId!==(network==='botchain'?677:publicMode?11155111:31337))throw new Error('部署网络不匹配');
-    getAddress(d.token);for(const a of Object.values(d.accounts))getAddress(a);return d;
+    if(!fs.existsSync(file))throw new Error(publicMode?(network==='botchain'?'BOT Chain 测试网尚未部署；请运行 deploy:botchain。':'Sepolia 尚未部署；本地流程可先运行。'):'本地流程尚未初始化，请运行 npm run start。');
+    const d=readJSON<FlowDeployment>(file);if(d.chainId!==(network==='botchain'?config.botchainChainId:publicMode?11155111:31337))throw new Error('部署网络不匹配');
+    getAddress(d.token);if(d.escrow)getAddress(d.escrow);for(const a of Object.values(d.accounts))getAddress(a);return d;
   }
   ensureAccounts(d:FlowDeployment){
-    const now=new Date().toISOString(),network=d.chainId===31337?'anvil':d.chainId===677?'botchain':'sepolia';
+    const now=new Date().toISOString(),network=d.chainId===31337?'anvil':d.chainId===11155111?'sepolia':'botchain';
     const accounts:BackendAccount[]=[
       {id:d.id+':member',role:'member',displayName:'会员账户',address:getAddress(d.accounts.userA),chainId:d.chainId,network,status:'active',createdAt:now,updatedAt:now},
       {id:d.id+':merchant',role:'merchant',displayName:'商家账户',address:getAddress(d.accounts.merchant),chainId:d.chainId,network,status:'active',createdAt:now,updatedAt:now},
@@ -36,7 +36,7 @@ export class FlowService{
     return this.store.accounts().filter(a=>a.id.startsWith(d.id+':'));
   }
   accounts(){const d=this.deployment();return this.ensureAccounts(d);}
-  rpc(d:FlowDeployment){return d.chainId===31337?config.localRpc:d.chainId===677?config.botchainRpc:config.sepoliaRpc;}
+  rpc(d:FlowDeployment){return d.chainId===31337?config.localRpc:d.chainId===677?'https://rpc.botchain.ai':d.chainId===968?config.botchainRpc:config.sepoliaRpc;}
   events(d:FlowDeployment):FlowEvent[]{return this.store.events(d.id).map(e=>({id:e.id,txHash:e.txHash,logIndex:e.logIndex,blockNumber:e.blockNumber,blockHash:e.blockHash,timestamp:e.timestamp,from:e.args.from,to:e.args.to,amount:e.args.amount,kind:e.name as FlowEvent['kind']}));}
   readRpc(d:FlowDeployment){return new ReadRpc(this.rpc(d),600,AbortSignal.timeout(30000));}
   sync(){if(this.syncing)return this.syncing;this.syncing=this.syncInner().finally(()=>{this.syncing=undefined;});return this.syncing;}
@@ -58,7 +58,7 @@ export class FlowService{
     for(const log of logs.sort((a,b)=>Number(BigInt(a.blockNumber))-Number(BigInt(b.blockNumber))||Number(BigInt(a.logIndex))-Number(BigInt(b.logIndex)))){
       const decoded=decodeFlowTransfer(log,d.token,abi.abi);if(!decoded||same(decoded.from,ZeroAddress))continue;
       const fromAddress=decoded.from,toAddress=decoded.to;
-      const primary=[d.accounts.merchant,d.accounts.userA,d.accounts.userB].some(a=>same(a,fromAddress)||same(a,toAddress));
+      const primary=[d.accounts.merchant,d.accounts.userA,d.accounts.userB,d.escrow].filter(Boolean).some(a=>same(a!,fromAddress)||same(a!,toAddress));
       if(!primary&&!firstRecipients.has(fromAddress.toLowerCase()))continue;
       if(same(fromAddress,d.accounts.merchant))firstRecipients.add(toAddress.toLowerCase());
       const block=await rpc.block(decoded.blockNumber);
@@ -131,7 +131,7 @@ export class FlowService{
         const decoded=log?iface.parseLog(log):null;
         if(receipt.status!=='0x1'||receipt.blockHash!==chosen.blockHash||block.hash!==chosen.blockHash||!decoded||!same(decoded.args.from,chosen.from)||!same(decoded.args.to,chosen.to)||decoded.args.value.toString()!==chosen.amount)throw new Error('收据与事件不匹配');
         const id=chosen.id===event.id?receiptId:job.id+':receipt:'+chosen.id;
-         const data={evidenceId:id,chainId:d.chainId,txHash:chosen.txHash,blockNumber:chosen.blockNumber,blockHash:block.hash,status:'confirmed',transactionFrom:tx.from,transactionTo:tx.to,transfer:{from:chosen.from,to:chosen.to,amount:chosen.amount,logIndex:chosen.logIndex},gasUsed:BigInt(receipt.gasUsed).toString(),effectiveGasPrice:BigInt(receipt.effectiveGasPrice).toString(),explorerUrl:d.chainId===11155111?'https://sepolia.etherscan.io/tx/'+chosen.txHash:d.chainId===677?'https://scan.botchain.ai/tx/'+chosen.txHash:null,finality:'已入块；不是最终不可逆确认'};
+         const data={evidenceId:id,chainId:d.chainId,txHash:chosen.txHash,blockNumber:chosen.blockNumber,blockHash:block.hash,status:'confirmed',transactionFrom:tx.from,transactionTo:tx.to,transfer:{from:chosen.from,to:chosen.to,amount:chosen.amount,logIndex:chosen.logIndex},gasUsed:BigInt(receipt.gasUsed).toString(),effectiveGasPrice:BigInt(receipt.effectiveGasPrice).toString(),explorerUrl:d.chainId===11155111?'https://sepolia.etherscan.io/tx/'+chosen.txHash:d.chainId===677?'https://scan.botchain.ai/tx/'+chosen.txHash:d.chainId===968?'https://scan.bohr.life/tx/'+chosen.txHash:null,finality:'已入块；不是最终不可逆确认'};
          this.store.put('evidence',{id,datasetId:d.id,chainId:d.chainId,kind:'transaction',asOfBlock:chosen.blockNumber,capturedAt:new Date().toISOString(),txHash:chosen.txHash,explorerUrl:data.explorerUrl||undefined,facts:data,coverage:{complete:true,missing:[]}});
          return {data,evidenceIds:[id,chosen.id]};
       }

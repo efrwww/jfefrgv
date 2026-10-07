@@ -1,0 +1,101 @@
+{
+  "chainId": 968,
+  "network": "BOT Chain Test",
+  "rpcUrl": "https://rpc.bohr.life",
+  "token": "0x6ceb33b8d1a286a7ba0713032dd787f73cad5242",
+  "escrow": "0x22608d1c8d04b1e33a00465a7e978cbcee1f060f",
+  "accounts": {
+    "merchant": "0xa4C13b49A5A0Ed9781992C1a2bA4ee1e5B713f2B",
+    "userA": "0x781A857B8EEa43A79614e73A42ddF52f8d3c83F3",
+    "userB": "0xBddFdDa1337Ed23214efcEccb7e91a1eCE1387e8",
+    "payout": "0xAf55DcfA3aB487655D10aA23A5321F568f9A0E78",
+    "nextPayout": "0x56044f1ff373221eD4C8513e62C4EDc54049AdA7"
+  },
+  "deploymentBlock": 26039084,
+  "deploymentHash": "0xc5b37f11d0daed4f6a98ebb4c7abffabd9b2ed9f562c5f7722e4e7d278029065",
+  "transactions": [
+    {
+      "label": "deploy GymToken",
+      "hash": "0xc5b37f11d0daed4f6a98ebb4c7abffabd9b2ed9f562c5f7722e4e7d278029065",
+      "blockNumber": 26039084,
+      "gasUsed": "610357",
+      "explorerUrl": "https://scan.bohr.life/tx/0xc5b37f11d0daed4f6a98ebb4c7abffabd9b2ed9f562c5f7722e4e7d278029065"
+    },
+    {
+      "label": "deploy GymEscrow",
+      "hash": "0x957de56cadd04cb79ac64a1f22dd7e80ddca0be11ca180bc8ef7fe4cc4c5e8cd",
+      "blockNumber": 26039105,
+      "gasUsed": "1238891",
+      "explorerUrl": "https://scan.bohr.life/tx/0x957de56cadd04cb79ac64a1f22dd7e80ddca0be11ca180bc8ef7fe4cc4c5e8cd"
+    },
+    {
+      "label": "fund userA",
+      "hash": "0x858fefbe4038b807df9306f97550296daa2d8f3b969e945335684fc8d0166f3a",
+      "blockNumber": 26039120,
+      "gasUsed": "21000",
+      "explorerUrl": "https://scan.bohr.life/tx/0x858fefbe4038b807df9306f97550296daa2d8f3b969e945335684fc8d0166f3a"
+    },
+    {
+      "label": "fund userB",
+      "hash": "0x50eda4c21aa71e9316e301b41c6f6631b358fdd6890d36731c1fc8bdf3c796a6",
+      "blockNumber": 26039136,
+      "gasUsed": "21000",
+      "explorerUrl": "https://scan.bohr.life/tx/0x50eda4c21aa71e9316e301b41c6f6631b358fdd6890d36731c1fc8bdf3c796a6"
+    },
+    {
+      "label": "userA approve 3000 GYM",
+      "hash": "0xb7ef2cb0e8af76aac8927bac05ed9b414f15520cf38015425d840c9e8c678025",
+      "blockNumber": 26039145,
+      "gasUsed": "46306",
+      "explorerUrl": "https://scan.bohr.life/tx/0xb7ef2cb0e8af76aac8927bac05ed9b414f15520cf38015425d840c9e8c678025"
+    },
+    {
+      "label": "userA deposit 3000 GYM",
+      "hash": "0x7ca191dc1efabfd8b0d8bb65de9d9ea43afe9a8e800b108f50b9fe6a4e74e8f9",
+      "blockNumber": 26039196,
+      "gasUsed": "126527",
+      "explorerUrl": "https://scan.bohr.life/tx/0x7ca191dc1efabfd8b0d8bb65de9d9ea43afe9a8e800b108f50b9fe6a4e74e8f9"
+    },
+    {
+      "label": "merchant request consumption",
+      "hash": "0x293fb03f73949c68d4118a6d3ad4f55ed9dee6ff488ee3b727395c46723b1631",
+      "blockNumber": 26039222,
+      "gasUsed": "215065",
+      "explorerUrl": "https://scan.bohr.life/tx/0x293fb03f73949c68d4118a6d3ad4f55ed9dee6ff488ee3b727395c46723b1631"
+    },
+    {
+      "label": "userA confirm consumption",
+      "hash": "0x5675195e4a9530668446305c081a3a387817ceedfdacc117a61c709bbf1c5945",
+      "blockNumber": 26039240,
+      "gasUsed": "73610",
+      "explorerUrl": "https://scan.bohr.life/tx/0x5675195e4a9530668446305c081a3a387817ceedfdacc117a61c709bbf1c5945"
+    },
+    {
+      "label": "merchant withdraw 30 GYM",
+      "hash": "0xe74cc013e7f2bd009f708ba766a404e07b600a419b24742e30793002f0873c05",
+      "blockNumber": 26039248,
+      "gasUsed": "61686",
+      "explorerUrl": "https://scan.bohr.life/tx/0xe74cc013e7f2bd009f708ba766a404e07b600a419b24742e30793002f0873c05"
+    }
+  ],
+  "links": {
+    "token": "https://scan.bohr.life/address/0x6ceb33b8d1a286a7ba0713032dd787f73cad5242",
+    "escrow": "https://scan.bohr.life/address/0x22608d1c8d04b1e33a00465a7e978cbcee1f060f",
+    "merchant": "https://scan.bohr.life/address/0xa4C13b49A5A0Ed9781992C1a2bA4ee1e5B713f2B",
+    "userA": "https://scan.bohr.life/address/0x781A857B8EEa43A79614e73A42ddF52f8d3c83F3",
+    "payout": "https://scan.bohr.life/address/0xAf55DcfA3aB487655D10aA23A5321F568f9A0E78",
+    "scan": "https://scan.bohr.life",
+    "bridge": "https://bridge.bohr.life",
+    "dex": "https://dex.bohr.life",
+    "wallet": "https://wallet.bohr.life",
+    "faucet": "https://faucet.bohr.life"
+  },
+  "verification": {
+    "tokenEscrowBalance": "2970",
+    "consumedAmount": "30",
+    "merchantWithdrawn": "30",
+    "sessionKey": "0x8a391423f2e280cfe986816c863e23aba6b1815c2ff565b445098995d5656aca",
+    "requestId": "1"
+  },
+  "completedAt": "2026-10-07T16:02:03.126Z"
+}

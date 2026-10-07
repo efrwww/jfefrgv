@@ -7,8 +7,8 @@ import {TRANSFER_TOPIC,addressTopic,ReadRpc} from './rpc.ts';
 import {indexedTransfers} from './blockscout.ts';
 import {followupScope} from './followup.ts';
 export const tokenAbi=['event Transfer(address indexed from,address indexed to,uint256 value)','function balanceOf(address) view returns(uint256)','function decimals() view returns(uint8)','function symbol() view returns(string)'];
-export function providerFor(ds:Dataset){const url=ds.chainId===31337?config.localRpc:ds.chainId===11155111?config.sepoliaRpc:ds.chainId===677?config.botchainRpc:ds.chainId===1?config.mainnetRpc:null;if(!url)throw new Error('Unsupported network');return new JsonRpcProvider(url,ds.chainId,{staticNetwork:true,cacheTimeout:-1});}
-export function explorer(ds:Dataset,hash:string){return ds.chainId===1?'https://etherscan.io/tx/'+hash:ds.chainId===11155111?'https://sepolia.etherscan.io/tx/'+hash:ds.chainId===677?'https://scan.botchain.ai/tx/'+hash:undefined;}
+export function providerFor(ds:Dataset){const url=ds.chainId===31337?config.localRpc:ds.chainId===11155111?config.sepoliaRpc:ds.chainId===677?'https://rpc.botchain.ai':ds.chainId===968?config.botchainRpc:ds.chainId===1?config.mainnetRpc:null;if(!url)throw new Error('Unsupported network');return new JsonRpcProvider(url,ds.chainId,{staticNetwork:true,cacheTimeout:-1});}
+export function explorer(ds:Dataset,hash:string){return ds.chainId===1?'https://etherscan.io/tx/'+hash:ds.chainId===11155111?'https://sepolia.etherscan.io/tx/'+hash:ds.chainId===677?'https://scan.botchain.ai/tx/'+hash:ds.chainId===968?'https://scan.bohr.life/tx/'+hash:undefined;}
 export class ChainService {
   store:Store;busy=new Set<string>();
   constructor(store:Store){this.store=store;}
@@ -55,10 +55,10 @@ export class ChainService {
   }
   eventEvidence(ds:Dataset,event:ChainEvent):Evidence{return {id:event.id,datasetId:ds.id,chainId:ds.chainId,kind:'event',asOfBlock:event.blockNumber,capturedAt:new Date().toISOString(),txHash:event.txHash,explorerUrl:explorer(ds,event.txHash),facts:{event,dataOrigin:ds.dataOrigin,...(ds.collection?{collection:ds.collection}:{})},coverage:{complete:true,missing:[]}};}
   async relatedTransfers(ds:Dataset,address:string,cutoff:number){
-    if(![1,11155111,677].includes(ds.chainId))throw new Error('Public-chain follow-up only');
+    if(![1,11155111,677,968].includes(ds.chainId))throw new Error('Public-chain follow-up only');
     const checkpoint=this.store.checkpoint(ds.id),scope=followupScope(ds,this.store.events(ds.id),address,cutoff),{fromBlock,toBlock}=scope;
     if(toBlock-fromBlock>10000||fromBlock>toBlock||toBlock>cutoff)throw new Error('Follow-up window outside bounded scope');
-    const rpcUrl=ds.chainId===1?config.mainnetRpc:ds.chainId===677?config.botchainRpc:config.sepoliaRpc;
+    const rpcUrl=ds.chainId===1?config.mainnetRpc:ds.chainId===677?'https://rpc.botchain.ai':ds.chainId===968?config.botchainRpc:config.sepoliaRpc;
     const rpc=new ReadRpc(rpcUrl,30,AbortSignal.timeout(14000),ds.chainId===1?config.mainnetFallbackRpc:undefined);
     const evidenceId=stableId('followup',[ds.id,address.toLowerCase(),fromBlock,toBlock,'post-receipt-120-v1']);
     const saved=this.store.get<Evidence>('evidence',evidenceId);

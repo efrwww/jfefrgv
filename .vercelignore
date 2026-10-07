@@ -1,0 +1,25 @@
+# 不上传到 Vercel 的内容
+#
+# .runtime/ 里有 BOT Chain 测试钱包的私钥（botchain-wallet.json），
+# 上传到 Vercel 等于把私钥交给了第三方服务器。必须排除。
+
+.runtime/
+.env
+.env.*
+!.env.example
+
+node_modules/
+dist/
+cache/
+.vercel/
+
+data/
+artifacts/
+
+*.log
+
+cases/mainnet/*.raw.json
+cases/mainnet/*.sources.json
+cases/mainnet/*receipts-cache.json
+cases/mainnet/*index.json
+cases/mainnet/discovery.json
