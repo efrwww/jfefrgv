@@ -5,7 +5,7 @@ export type PlainReport={tone:'neutral'|'attention'|'unknown';label:string;title
 export type ConversationResult={summary:string;details:string;nextStep:string;confirmed:string[];toVerify:string[]};
 export function conversationalReport(report:FlowReport,question:string){
   const m=report.metrics;
-  const summary=report.risk==='disputed'?'两次核查确认了同一笔资金变化，但对它的解释有分歧。':report.risk==='insufficient'?'链上已经确认资金发生了变化，资金用途仍需补充凭证。':report.risk==='no-signal'?'当前核查范围内没有发现明显异常信号。':'发现了需要核实的资金线索，当前证据不足以认定违规。';
+  const summary=report.risk==='disputed'?'两次核查确认了同一笔资金变化，但对它的解释有分歧。':report.risk==='insufficient'?'链上已经确认资金发生了变化，资金用途仍需补充凭证。':report.risk==='no-signal'?'当前核查范围内没有发现明显异常信号。':'发现了需要核实的资金线索，还不能说商家要跑路。';
   const changes:string[]=[];
   const confirmed:string[]=[];
   const toVerify:string[]=[];
