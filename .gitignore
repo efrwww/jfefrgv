@@ -16,3 +16,4 @@ cases/mainnet/*receipts-cache.json
 cases/mainnet/*index.json
 cases/mainnet/finalized-block-cache.json
 cases/mainnet/discovery.json
+.vercel

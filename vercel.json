@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "installCommand": "npm ci",
+  "outputDirectory": "dist/web",
+  "framework": null,
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    { "source": "/consumer", "destination": "/index.html" },
+    { "source": "/merchant", "destination": "/index.html" },
+    { "source": "/analysis", "destination": "/index.html" }
+  ]
+}

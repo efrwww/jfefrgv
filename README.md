@@ -10,6 +10,16 @@
 
 最新三项收尾已完成：四份演示报告的针对性解释复核、关键失败保护、独立本地启动/重启及交接。直接运行和演示见 [快速启动与演示](./快速启动与演示.md)，范围与实际结果见 [三项收尾验收](./artifacts/acceptance/三项收尾验收.md)。Sepolia 和独立第二 Agent 本轮不做，原完整 P0 不标完成。
 
+## Vercel 在线 Demo
+
+仓库包含一个可直接发布到 Vercel 的只读展示模式。它通过 `api/research.ts` 展示已保存的公开以太坊 USDC 调查案例，通过 `api/flow/[...path].ts` 展示会员付款、商家收款和 Agent 取证界面。在线模式不连接本机 Anvil、不保存 SQLite、不持有私钥，也不执行付款签名；页面会明确显示“Vercel 只读演示”。完整 RPC 索引、合约交互和本地签名流程仍按下方本地运行说明执行。
+
+```sh
+npm ci
+npm run build
+vercel --prod
+```
+
 ## 本地运行
 
 已安装依赖时可运行 `npm run doctor` 检查环境，`npm run start` 一键启动，`npm run services:status` 查看归属，`npm run stop` 停止本次由启动器创建的服务。已在其他终端运行的匹配服务会复用，不会被 stop 关闭。
