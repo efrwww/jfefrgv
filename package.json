@@ -1,0 +1,16 @@
+{
+  "name": "today-chain-agent-deploy",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "compile:contracts": "node scripts/compile-contracts.mjs",
+    "deploy:anvil": "node scripts/deploy-anvil.mjs",
+    "smoke:chain": "node scripts/smoke-chain.mjs"
+  },
+  "devDependencies": {
+    "@foundry-rs/anvil": "1.7.1",
+    "ethers": "^6.15.0",
+    "solc": "^0.8.37"
+  }
+}
