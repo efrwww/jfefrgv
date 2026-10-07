@@ -65,6 +65,40 @@ python -c "from agent.rpc_client import JsonRpcClient; print(JsonRpcClient().hea
 
 下一步是把合约事件 ABI 解码为 `TransactionRecord`，保持检测器和调查 Agent 不变。
 
+## 合约 ABI 和 Anvil 部署
+
+仓库现在包含最小自由金额托管合约：
+
+```text
+contracts/PrepaidEscrow.sol
+contracts/DemoToken.sol
+abi/PrepaidEscrow.json
+abi/DemoToken.json
+deployments/anvil.json
+```
+
+启动 Anvil 并部署：
+
+```powershell
+npm install --ignore-scripts
+npm run compile:contracts
+npx --no-install anvil --host 127.0.0.1 --port 8545 --chain-id 31337 --accounts 10
+npm run deploy:anvil
+```
+
+当前 Anvil 部署：
+
+```text
+DemoToken:     0x5FbDB2315678afecb367f032d93F642f64180aa3
+PrepaidEscrow: 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
+merchant:      0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+payout:        0x90F79bf6EB2c4f870365E785982E1f101E93b906
+```
+
+这些地址属于当前 Anvil 会话。Anvil 重启后状态和部署地址会变化，Agent 或其他服务应读取 `deployments/anvil.json`，不要把地址硬编码到业务逻辑中。
+
+合约允许会员支付任意正数金额、商家在实际托管余额内提现任意金额。30%、50% 和 80% 等阈值只由 Python 检测器生成调查信号，不会让合约回滚合法交易。
+
 ## 目录
 
 ```text
@@ -76,6 +110,9 @@ agent/orchestrator.py    Agent 核心循环和证据校验
 agent/rpc_client.py      Anvil/Sepolia JSON-RPC 适配器
 agent/cli.py             命令行入口
 data/sample_case.json    可复现异动调查案例
+contracts/                Solidity 合约源代码
+scripts/                  编译和 Anvil 部署脚本
+deployments/anvil.json    当前本地部署地址
 ```
 
 ## 证据安全规则
