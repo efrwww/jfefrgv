@@ -15,6 +15,7 @@ import type {BackendAccount} from '../shared/accounts.ts';
 const same=(a:string,b:string)=>a.toLowerCase()===b.toLowerCase();
 const eventOrder=(a:FlowEvent,b:FlowEvent)=>a.blockNumber-b.blockNumber||a.logIndex-b.logIndex;
 const inputSchema=z.object({role:z.enum(['merchant','userA','userB']),amount:z.string().regex(/^[1-9]\d{0,29}$/),to:z.string(),requestId:z.uuid()}).strict();
+const observeSchema=z.object({txHash:z.string().regex(/^0x[0-9a-fA-F]{64}$/),role:z.enum(['merchant','userA','userB']),from:z.string(),to:z.string()}).strict();
 export class FlowService{
   store=new Store('data/direct-flow.sqlite');syncing:Promise<void>|undefined;busy=false;closing=false;lastError='';
   constructor(){
@@ -73,15 +74,29 @@ export class FlowService{
     if(config.autoInvestigation)for(const event of pending)this.start(event.id,'核查这笔资金变动的原因、影响、正常解释与证据缺口。',true);
     void this.drain();
   }
-  async overview():Promise<FlowOverview>{
+  async overview(address?:string,role?:FlowRole):Promise<FlowOverview>{
     const base={version:'direct-flow-v1' as const,modelConfigured:!!config.llmKey&&config.llmEnabled,automaticAnalysis:config.autoInvestigation,events:[],jobs:[],reports:[],totalEvents:0,signingEnabled:false};
     let d:FlowDeployment;try{d=this.deployment();}catch(error){return {...base,ready:false,error:(error as Error).message};}
     try{
       const accounts=this.ensureAccounts(d);
       await this.sync();const p=new JsonRpcProvider(this.rpc(d),d.chainId,{staticNetwork:true,cacheTimeout:-1});
-      let balances:Record<FlowRole,string>;try{const token=new Contract(d.token,readJSON('shared/artifacts/GymToken.json').abi,p);balances=Object.fromEntries(await Promise.all(Object.entries(d.accounts).map(async([r,a])=>[r,(await token.balanceOf(a)).toString()]))) as Record<FlowRole,string>;}finally{p.destroy();}
-      const events=this.events(d);return {...base,ready:true,deployment:d,accounts,balances,checkpoint:this.store.checkpoint(d.id),events:events.slice(-100),totalEvents:events.length,jobs:this.store.list<FlowJob>('jobs',d.id).slice(0,100),reports:this.store.list<FlowReport>('reports',d.id).slice(0,100),signingEnabled:d.chainId===31337,monitorError:this.lastError||undefined};
+      let balances:Record<FlowRole,string>;try{const token=new Contract(d.token,readJSON('shared/artifacts/GymToken.json').abi,p);balances=Object.fromEntries(await Promise.all(Object.entries(d.accounts).map(async([r,a])=>[r,(await token.balanceOf(a)).toString()]))) as Record<FlowRole,string>;if(address&&role&&['merchant','userA','userB'].includes(role)){balances[role]=(await token.balanceOf(getAddress(address))).toString();}}finally{p.destroy();}
+      const events=this.events(d);return {...base,ready:true,deployment:d,accounts,balances,checkpoint:this.store.checkpoint(d.id),events:events.slice(-100),totalEvents:events.length,jobs:this.store.list<FlowJob>('jobs',d.id).slice(0,100),reports:this.store.list<FlowReport>('reports',d.id).slice(0,100),signingEnabled:true,monitorError:this.lastError||undefined};
     }catch{this.lastError='链上连接或部署核验失败，历史记录不是最新余额。';return {...base,ready:false,deployment:d,accounts:this.store.accounts().filter(a=>a.id.startsWith(d.id+':')),error:this.lastError,events:this.events(d).slice(-100),jobs:this.store.list<FlowJob>('jobs',d.id).slice(0,100),reports:this.store.list<FlowReport>('reports',d.id).slice(0,100),totalEvents:this.events(d).length};}
+  }
+  async observe(raw:unknown){
+    const input=observeSchema.parse(raw),d=this.deployment(),from=getAddress(input.from),to=getAddress(input.to);
+    if(input.role!=='merchant'&&!same(to,d.accounts.merchant))throw new Error('会员付款目标必须为当前商家');
+    const rpc=this.readRpc(d),receipt=await rpc.call('eth_getTransactionReceipt',[input.txHash]),tx=await rpc.call('eth_getTransactionByHash',[input.txHash]);
+    if(!receipt||receipt.status!=='0x1'||!tx)throw new Error('观察交易尚未确认');
+    const block=await rpc.block(Number(BigInt(receipt.blockNumber))),iface=new Interface(readJSON('shared/artifacts/GymToken.json').abi);
+    const log=receipt.logs.find((item:any)=>same(item.address,d.token)&&(()=>{try{const parsed=iface.parseLog(item);return !!parsed&&same(parsed.name,'Transfer')&&same(parsed.args.from,from)&&same(parsed.args.to,to);}catch{return false;}})());
+    if(!log)throw new Error('交易中没有匹配的 GYM 转账');
+    const decoded=iface.parseLog(log)!;
+    const event:FlowEvent={id:`${d.id}:${input.txHash}:${Number(BigInt(log.logIndex))}`,txHash:input.txHash,logIndex:Number(BigInt(log.logIndex)),blockNumber:block.number,blockHash:block.hash,timestamp:block.timestamp,from,to,amount:decoded.args.value.toString(),kind:input.role==='merchant'?'withdrawal':'payment',transactionIndex:Number(BigInt(log.transactionIndex??tx.transactionIndex??0)),token:d.token,status:'success'};
+    this.store.addEvent({id:event.id,datasetId:d.id,chainId:d.chainId,address:d.token,name:event.kind,args:{from,to,amount:event.amount},txHash:event.txHash,blockNumber:event.blockNumber,blockHash:event.blockHash,timestamp:event.timestamp,transactionIndex:event.transactionIndex??0,logIndex:event.logIndex,finality:'confirmed'});
+    this.store.put('evidence',{id:event.id,datasetId:d.id,chainId:d.chainId,kind:'transaction',asOfBlock:block.number,capturedAt:new Date().toISOString(),txHash:event.txHash,explorerUrl:d.chainId===677?'https://scan.botchain.ai/tx/'+event.txHash:d.chainId===968?'https://scan.bohr.life/tx/'+event.txHash:undefined,facts:{event,transactionFrom:tx.from,transactionTo:tx.to,status:'confirmed'},coverage:{complete:true,missing:[]}});
+    this.store.block(d.id,block.number,block.hash);return {eventId:event.id,txHash:event.txHash,amount:event.amount,blockNumber:event.blockNumber};
   }
   async transfer(raw:unknown){
     const input=inputSchema.parse(raw),d=this.deployment();
@@ -165,9 +180,10 @@ export function mountFlow(app:express.Express){
     const message=error instanceof z.ZodError?'请输入有效的正整数金额、地址和请求编号。':error instanceof Error?error.message:'';
     const safe=/^(健身币余额不足|会员付款目标|不能转给|相同请求|重复请求|本地流程|Sepolia 尚未|公开网络目前|事件不在|事件索引)/.test(message)?message:'操作未完成，请检查本地链或参数；如果已发出交易，请先查看账单，不要重复付款。';res.status(400).json({error:{message:safe}});
   });
-  app.get('/api/flow',route(()=>service.overview()));
+  app.get('/api/flow',route(req=>service.overview(typeof req.query.address==='string'?req.query.address:undefined,typeof req.query.role==='string'?req.query.role as FlowRole:undefined)));
   app.get('/api/flow/accounts',route(()=>service.accounts()));
   app.post('/api/flow/transfers',route(req=>service.transfer(req.body)));
+  app.post('/api/flow/observe',route(req=>service.observe(req.body)));
   app.post('/api/flow/investigations',route(req=>{const p=z.object({eventId:z.string().min(1).max(250),question:z.string().min(1).max(1000)}).strict().parse(req.body);return service.start(p.eventId,p.question);}));
   app.get('/api/flow/jobs/:id',route(req=>service.store.get('jobs',String(req.params.id))??null));
    app.get('/api/flow/reports/:id',route(req=>service.store.get('reports',String(req.params.id))??null));
