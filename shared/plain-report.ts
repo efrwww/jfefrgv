@@ -5,7 +5,7 @@ export type PlainReport={tone:'neutral'|'attention'|'unknown';label:string;title
 export type ConversationResult={summary:string;details:string;nextStep:string;confirmed:string[];toVerify:string[]};
 export function conversationalReport(report:FlowReport,question:string){
   const m=report.metrics;
-  const summary=report.risk==='disputed'?'两次核查确认了同一笔资金变化，但对它的解释有分歧。':report.risk==='insufficient'?'链上已经确认资金发生了变化，资金用途仍需补充凭证。':report.risk==='no-signal'?'当前核查范围内没有发现明显异常信号。':'发现了需要核实的资金线索，还不能说商家要跑路。';
+  const summary=report.risk==='disputed'?'两次核查确认了同一笔资金变化，但对它的解释不一致。':report.risk==='insufficient'?'链上已经确认资金发生了变化，资金用途仍需补充凭证。':report.risk==='no-signal'?'当前核查范围内没有发现明显异常信号。':'发现了需要核实的资金线索，还不能说商家要跑路。';
   const changes:string[]=[];
   const confirmed:string[]=[];
   const toVerify:string[]=[];
@@ -18,7 +18,7 @@ export function conversationalReport(report:FlowReport,question:string){
     const data=trace?.result as {transfers?:unknown[]}|undefined;
     const detail=Array.isArray(data?.transfers)?data.transfers.length?`查到收钱的账户又转出了 ${data.transfers.length} 笔，具体去向可以展开依据查看。`:'在当前追踪窗口内，没有发现收钱账户继续转账。':'这次还没有拿到可靠的后续转账结果。';
     confirmed.push(detail);toVerify.push('追踪窗口之外的转账，以及收款账户与商家的关系。');
-    return {summary,details:detail+'这里只覆盖有限区块和直接转账，未查到不等于不存在。',nextStep:'先核对收款账户身份，再补充用途说明或付款凭证。',confirmed,toVerify:[...new Set(toVerify)]};
+    return {summary,details:detail+'这里只覆盖有限区块和直接转账，不能把没查到当作不存在。',nextStep:'先核对收款账户身份，再补充用途说明或付款凭证。',confirmed,toVerify:[...new Set(toVerify)]};
   }
   if(/正常.*解释|经营.*可能解释/.test(question)){toVerify.push('房租、工资、采购或账户归集等正常经营解释。');return {summary,details:'房租、工资或经营账户归集都可能造成这种资金轨迹，但链上记录没有给出用途凭证。',nextStep:'请商家说明用途，并提供对应账单或付款凭证。',confirmed,toVerify:[...new Set(toVerify)]};}
   if(!confirmed.length)confirmed.push('已确认这笔账单及其链上收款、转出记录。');
@@ -44,7 +44,7 @@ export function plainReport(event:FlowEvent,report:FlowReport|undefined,job:Flow
     'no-signal':{tone:'neutral' as const,label:'暂未发现明显异常',title:'这次检查没有发现明确的异常信号',nextStep:'留意后续提醒；这次结果不是商家安全或正常营业的保证。'},
   }[state];
   if(!reasons.length)reasons.push(state==='no-signal'?'在这次检查的记录范围内，没有发现明确的资金异常。':'链上已确认资金变化，但当前记录不包含线下用途、合同或付款凭证。');
-  if(m.baselineCount<3)reasons.push('历史对照样本不足，金额是否反常还不能定量确认。');
+  if(m.baselineCount<3)reasons.push('同类记录太少，金额是否反常还不能定量确认。');
   return {...base,...presentation,reasons};
 }
 export function plainReportText(summary:PlainReport){return ['今天链不练 · 简明检查结果',summary.label,summary.title,'','链上已确认',summary.happened,'','这次核查得到的线索',...summary.reasons.map(s=>'• '+s),'','下一步核实',summary.nextStep,'',summary.boundary,...(summary.checkedAt?['检查时间：'+new Date(summary.checkedAt).toLocaleString('zh-CN')]:[]),'GYM 是无现金价值的演示币。本地演示不代表已接入公共以太坊。'].join('\n');}
