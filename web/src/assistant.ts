@@ -14,7 +14,8 @@ export function investigationQuestion(text:string,role:Role,account=''){
   return question;
 }
 export function assistantReply(report:Report){
-  if(report.mode!=='llm'||report.status!=='complete')return '这次 AI 调查没有完成，不能把规则提示当作完整回答。请稍后重试。';
+  if(report.mode==='rule-only'&&report.status==='complete')return '模型暂不可用；已生成确定性规则报告，事件、指标和证据可直接核对。模型恢复后可再次运行解释。';
+  if(report.mode!=='llm'||report.status!=='complete')return '这次调查没有完成，不能把规则提示当作完整回答。请稍后重试。';
   if(report.review?.notes.length)return '核查已完成；已有复核更正，右侧先展示更正说明，再展示原始调查依据。';
   return report.consumerImpact||report.headline;
 }

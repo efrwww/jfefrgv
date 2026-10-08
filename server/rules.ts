@@ -11,11 +11,18 @@ export function gymAlerts(ds:Dataset,events:ChainEvent[],timestamp:number,snapsh
   }
   for(const change of recent.filter(e=>e.name==='PayoutAddressChanged')){
     const following=withdrawals.filter(w=>w.timestamp>=change.timestamp&&(w.blockNumber>change.blockNumber||(w.blockNumber===change.blockNumber&&w.logIndex>change.logIndex))&&w.timestamp<change.timestamp+86400);
-    if(following.length)add('R2','变更收款地址后提现',[change,...following],{amount:following.reduce((n,e)=>n+BigInt(e.args.amount),0n).toString(),newAddress:change.args.newAddress});
+    if(following.length)add('R2','变更收款地址后提现',[change,...following],{amount:following.reduce((n,e)=>n+BigInt(e.args.amount),0n).toString(),newAddress:change.args.newAddress,secondsToFirstWithdrawal:String(Math.max(0,following[0].timestamp-change.timestamp))});
     else add('ADDRESS_INFO','收款地址发生变更',[change],{newAddress:change.args.newAddress},'info');
   }
   const groups=new Map<string,ChainEvent[]>();for(const e of recent.filter(e=>e.name==='ConsumptionConfirmed')){const group=groups.get(e.args.user)||[];group.push(e);groups.set(e.args.user,group);}
   for(const [user,refs] of groups)if(refs.length>=3)add('R4','同一会员短时集中确认消费',refs,{user,count:String(refs.length),amount:refs.reduce((n,e)=>n+BigInt(e.args.amount),0n).toString()});
+  const closed=new Set(recent.filter(e=>['ConsumptionConfirmed','ConsumptionRejected','ConsumptionCancelled','ConsumptionExpired'].includes(e.name)).map(e=>e.args.id));
+  const staleRequests=recent.filter(e=>e.name==='ConsumptionRequested'&&!closed.has(e.args.id)&&timestamp-e.timestamp>=6*60*60);
+  if(staleRequests.length)add('R3','消费申请长时间未确认',staleRequests,{count:String(staleRequests.length),oldestSeconds:String(Math.max(...staleRequests.map(e=>timestamp-e.timestamp)))},'info');
+  if(ds.escrow){
+    const direct=recent.filter(e=>e.name==='Transfer'&&e.args.to?.toLowerCase()===ds.merchant?.toLowerCase()&&e.address.toLowerCase()===ds.token.toLowerCase());
+    if(direct.length)add('R5','出现绕过托管合约的商家直收转账',direct,{count:String(direct.length),amount:direct.reduce((n,e)=>n+BigInt(e.args.value),0n).toString()},'critical');
+  }
   if(snapshot&&BigInt(snapshot.assets)<BigInt(snapshot.userCredit)+BigInt(snapshot.revenue)){
     result.push({id:stableId('alert',[ds.id,'R6',snapshot.blockNumber]),datasetId:ds.id,ruleId:'R6',title:'托管资产低于账面负债，需先核验数据',severity:'critical',evidenceIds:[snapshot.evidenceId],metrics:{assets:snapshot.assets,liabilities:(BigInt(snapshot.userCredit)+BigInt(snapshot.revenue)).toString()},window:{from,to}});
   }

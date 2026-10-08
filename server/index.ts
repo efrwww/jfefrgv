@@ -5,7 +5,7 @@ import {z} from 'zod';
 import {config,readJSON} from './config.ts';
 import {Store} from './store.ts';
 import {ChainService} from './chain.ts';
-import {Investigator,reportMarkdown} from './agent.ts';
+import {Investigator,reportMarkdown,llmStatus} from './agent.ts';
 import {automaticInvestigation} from './monitor.ts';
 import {pendingRequests,confirmedToday} from '../shared/business.ts';
 import type {Dataset,Report} from '../shared/types.ts';
@@ -28,10 +28,10 @@ for(const job of store.list('jobs'))if(['running','queued'].includes(job.status)
 const ds=(req:express.Request)=>{const value=store.get<Dataset>('datasets',String(req.query.datasetId||req.body?.datasetId||''));if(!value||!activeDatasetIds.has(value.id))throw new Error('请选择有效数据集。');return value;};
 const route=(fn:(req:express.Request,res:express.Response)=>Promise<unknown>|unknown)=>(req:express.Request,res:express.Response)=>Promise.resolve().then(()=>fn(req,res)).catch(()=>res.status(400).json({error:{code:'REQUEST_FAILED',message:'请求失败：检查网络、参数或数据范围。'}}));
 const ok=(res:express.Response,data:unknown)=>res.json({data});
-app.get('/api/health',route(async(req,res)=>ok(res,{workflow:'direct-flow-v1',modelConfigured:!!config.llmKey&&config.llmEnabled,datasets:activeDatasets().map(d=>({id:d.id,...store.checkpoint(d.id)}))})));
+app.get('/api/health',route(async(req,res)=>ok(res,{workflow:'direct-flow-v1',model:llmStatus(),modelConfigured:!!config.llmKey&&config.llmEnabled,datasets:activeDatasets().map(d=>({id:d.id,...store.checkpoint(d.id)}))})));
 app.get('/api/config',route((req,res)=>ok(res,{datasets:activeDatasets(),localRpc:config.localRpc,tokenAbi:readJSON('shared/artifacts/GymToken.json').abi,escrowAbi:readJSON('shared/artifacts/GymEscrow.json').abi,localTestWalletEnabled:true})));
 app.post('/api/sync',route(async(req,res)=>{loadDatasets();return ok(res,await chain.sync(ds(req)));}));
-app.get('/api/overview',route(async(req,res)=>{const d=ds(req),checkpoint=store.checkpoint(d.id),events=store.events(d.id);return ok(res,{dataset:d,checkpoint,snapshot:d.adapter==='gym'&&checkpoint?.blockNumber!==undefined?await chain.snapshot(d,checkpoint.blockNumber):null,events:events.slice(-100),totalEventCount:events.length,displayEventLimit:100,alerts:store.list('alerts',d.id),reports:store.list('reports',d.id),latestJob:store.list('jobs',d.id)[0]??null,backgroundMonitoring:config.autoInvestigation&&!!config.llmKey&&config.llmEnabled,businessSummary:d.adapter==='gym'?{todayRevenue:confirmedToday(events),pending:pendingRequests(events)}:null});}));
+app.get('/api/overview',route(async(req,res)=>{const d=ds(req),checkpoint=store.checkpoint(d.id),events=store.events(d.id);return ok(res,{dataset:d,checkpoint,snapshot:d.adapter==='gym'&&checkpoint?.blockNumber!==undefined?await chain.snapshot(d,checkpoint.blockNumber):null,events:events.slice(-100),totalEventCount:events.length,displayEventLimit:100,alerts:store.list('alerts',d.id),reports:store.list('reports',d.id),latestJob:store.list('jobs',d.id)[0]??null,model:llmStatus(),modelConfigured:!!config.llmKey&&config.llmEnabled,backgroundMonitoring:config.autoInvestigation,businessSummary:d.adapter==='gym'?{todayRevenue:confirmedToday(events),pending:pendingRequests(events)}:null});}));
 app.get('/api/users/:address',route(async(req,res)=>{if(!isAddress(String(req.params.address)))throw new Error('Bad address');return ok(res,await chain.user(ds(req),String(req.params.address)));}));
 app.get('/api/events',route((req,res)=>{const d=ds(req),limit=Math.min(200,Math.max(1,Number(req.query.limit||100)));return ok(res,store.events(d.id).slice(-limit));}));
 app.get('/api/alerts',route((req,res)=>ok(res,store.list('alerts',ds(req).id))));
@@ -44,7 +44,7 @@ const stopFlow=mountFlow(app);
 app.use((error:unknown,req:express.Request,res:express.Response,next:express.NextFunction)=>res.status(400).json({error:{code:'BAD_BODY',message:'请求内容无效。'}}));
 async function monitorGym(d:Dataset){
   const checkpoint=await chain.sync(d);
-  const request=automaticInvestigation(d,checkpoint,store.events(d.id),store.list('alerts',d.id),store.list<Report>('reports',d.id),store.list('jobs',d.id),config.autoInvestigation&&!!config.llmKey&&config.llmEnabled);
+  const request=automaticInvestigation(d,checkpoint,store.events(d.id),store.list('alerts',d.id),store.list<Report>('reports',d.id),store.list('jobs',d.id),config.autoInvestigation);
   if(request)agent.start(d,request.question,{automaticKey:request.automaticKey});
 }
 const timer=setInterval(()=>{loadDatasets();if(!fs.existsSync('data/flow/deployment-local.json'))for(const d of activeDatasets().filter(d=>d.adapter==='gym'))void monitorGym(d).catch(()=>{});},5000);

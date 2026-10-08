@@ -55,7 +55,7 @@ npm run dev
 
 访问 http://127.0.0.1:5173 。本地测试账号仅连接 chainId 31337 的本地节点，不是个人钱包。节点只监听本机，不要公开暴露解锁账户的 RPC。
 
-服务端优先读取本目录 `.env.local`，否则读取上级目录的 `.env.local`。使用上级 `.env.example` 的字段配置 DeepSeek；不要把密钥放进 `web/`、报告或代码仓库。未配置或模型失败会明确显示降级，不能视为 AI 调查完成。
+服务端优先读取本目录 `.env.local`，否则读取上级目录的 `.env.local`。使用上级 `.env.example` 的字段配置 DeepSeek；不要把密钥放进 `web/`、报告或代码仓库。模型状态分为“已配置”和“实际可用”：当模型未配置、账户欠费或接口失败时，调查仍会运行确定性规则报告，明确标记为 `rule-only`，不会把规则结果伪装成 AI 解释；模型恢复后可重新运行双 Agent 调查。
 
 ## 验收与案例
 
@@ -121,15 +121,14 @@ node --import tsx scripts/collect-mainnet.ts --expanded
 
 ```text
 RPC eth_getLogs
-  → Transfer 事件解码（地址、金额、区块、交易和日志索引）
-  → 账单分类（payment / receipt / withdrawal / recipient-transfer）
-  → 量化指标（24 小时窗口、基线、中位数、转出比例、接收方集中度）
-  → Agent 工具取证（list_events / compute_metrics / verify_transaction / trace_recipient）
-  → evidence 表保存交易收据、指标和资金流
-  → 报告中的 evidenceId 可通过 /api/flow/evidence/:id 复核
+  → ERC-20 Transfer 与 GymEscrow 业务事件解码（充值、消费申请、会员确认、退款、提现、改收款地址）
+  → 量化检测（资产覆盖、已结算收入、集中提现、改址后提现、密集确认、长期未确认、绕过托管直收）
+  → Agent 工具取证（业务事件 / 量化指标 / 托管快照 / 交易收据 / 收款地址后续流）
+  → evidence 表保存交易收据、区块、规则、窗口和不确定性
+  → 报告中的 evidenceId 可通过 `/api/evidence/:id` 或 `/api/flow/evidence/:id` 复核
 ```
 
-所有金额仍可自由填写；Agent 只读分析，不签名、不付款、不冻结，也不会因为规则命中而阻断商家转出。模型不可用时任务会明确为 `partial`，不会把规则结果伪装成成功的 AI 调查。
+所有金额仍可自由填写；Agent 只读分析，不签名、不付款、不冻结，也不会因为规则命中而阻断商家转出。模型不可用时任务会生成可核查的 `rule-only` 报告，报告仍包含事实、触发规则、证据、正常解释和未知项。
 
 ### 后端账户与数据库
 

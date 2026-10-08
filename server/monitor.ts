@@ -6,7 +6,7 @@ export function automaticInvestigation(ds:Dataset,checkpoint:any,events:ChainEve
   const relevant=alerts.filter(a=>a.severity!=='info'&&a.window.from<=checkpoint.timestamp&&a.window.to>checkpoint.timestamp);
   if(!relevant.length||jobs.some(j=>['queued','running'].includes(j.status)))return;
   const lastEvent=events.reduce((n,e)=>Math.max(n,e.blockNumber),0),cutoff=relevant.some(a=>a.ruleId==='R6')?checkpoint.blockNumber:lastEvent;
-  if(reports.some(r=>r.status==='complete'&&r.mode==='llm'&&r.datasetId===ds.id&&r.asOfBlock>=cutoff&&r.asOfBlock<=checkpoint.blockNumber))return;
+  if(reports.some(r=>r.status==='complete'&&(r.mode==='llm'||r.mode==='rule-only')&&r.datasetId===ds.id&&r.asOfBlock>=cutoff&&r.asOfBlock<=checkpoint.blockNumber))return;
   const automaticKey=stableId('automatic',[ds.id,relevant.map(a=>[a.ruleId,...a.evidenceIds].sort()).sort()]);
   if(jobs.some(j=>j.automaticKey===automaticKey))return;
   // Persisted dedupe, plus a five-minute cooldown; no repeated paid calls on polling/restarts.

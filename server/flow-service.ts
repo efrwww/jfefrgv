@@ -6,14 +6,16 @@ import {z} from 'zod';
 import {config,readJSON} from './config.ts';
 import {Store} from './store.ts';
 import {ReadRpc,TRANSFER_TOPIC,hex} from './rpc.ts';
-import {decodeFlowTransfer} from './flow-event-decoder.ts';
+import {decodeFlowTransfer,decodeEscrowEvent} from './flow-event-decoder.ts';
 import {classifyFlow,flowMetrics} from './flow-metrics.ts';
-import {runFlowStage} from './flow-agent.ts';
-import type {FlowDeployment,FlowEvent,FlowJob,FlowOverview,FlowReport,FlowRole,FlowStage} from '../shared/flow.ts';
+import {runFlowStage,flowModelStatus} from './flow-agent.ts';
+import type {FlowDeployment,FlowEvent,FlowJob,FlowOverview,FlowReport,FlowRole,FlowStage,FlowToolRun} from '../shared/flow.ts';
 import type {BackendAccount} from '../shared/accounts.ts';
 
 const same=(a:string,b:string)=>a.toLowerCase()===b.toLowerCase();
 const eventOrder=(a:FlowEvent,b:FlowEvent)=>a.blockNumber-b.blockNumber||a.logIndex-b.logIndex;
+const zero='0x0000000000000000000000000000000000000000';
+const escrowKind=(name:string):FlowEvent['kind']=>({Deposited:'deposit',ConsumptionRequested:'consumption-request',ConsumptionConfirmed:'consumption-confirmed',ConsumptionRejected:'consumption-rejected',ConsumptionCancelled:'consumption-cancelled',ConsumptionExpired:'consumption-expired',Refunded:'refund',Withdrawn:'withdrawal',PayoutAddressChanged:'payout-address-changed'} as Record<string,FlowEvent['kind']>)[name]||'recipient-transfer';
 const inputSchema=z.object({role:z.enum(['merchant','userA','userB']),amount:z.string().regex(/^[1-9]\d{0,29}$/),to:z.string(),requestId:z.uuid()}).strict();
 const observeSchema=z.object({txHash:z.string().regex(/^0x[0-9a-fA-F]{64}$/),role:z.enum(['merchant','userA','userB']),from:z.string(),to:z.string()}).strict();
 const faucetSchema=z.object({address:z.string()}).strict();
@@ -40,11 +42,19 @@ export class FlowService{
   }
   accounts(){const d=this.deployment();return this.ensureAccounts(d);}
   rpc(d:FlowDeployment){return d.chainId===31337?config.localRpc:d.chainId===677?'https://rpc.botchain.ai':d.chainId===968?config.botchainRpc:config.sepoliaRpc;}
-  events(d:FlowDeployment):FlowEvent[]{return this.store.events(d.id).map(e=>({id:e.id,txHash:e.txHash,logIndex:e.logIndex,blockNumber:e.blockNumber,blockHash:e.blockHash,timestamp:e.timestamp,from:e.args.from,to:e.args.to,amount:e.args.amount,kind:e.name as FlowEvent['kind']}));}
+  events(d:FlowDeployment):FlowEvent[]{return this.store.events(d.id).map(e=>{
+    const a=e.args,name=e.name,isEscrow=!!d.escrow&&same(e.address,d.escrow),user=a.user||a.from||zero,operator=a.operator||a.from||zero;
+    if(isEscrow){
+      const from=name==='Deposited'?user:name==='ConsumptionConfirmed'?user:name==='Refunded'?d.escrow!:operator;
+      const to=name==='Deposited'?d.escrow!:name==='Refunded'?user:name==='Withdrawn'?a.to||zero:name==='PayoutAddressChanged'?a.newAddress||zero:d.escrow!;
+      return {id:e.id,txHash:e.txHash,logIndex:e.logIndex,blockNumber:e.blockNumber,blockHash:e.blockHash,timestamp:e.timestamp,from,to,amount:a.amount||'0',kind:escrowKind(name),eventName:name,source:'escrow' as const,user:a.user,operator:a.operator,requestId:a.id,sessionKey:a.sessionKey,expiresAt:a.expiresAt?Number(a.expiresAt):undefined,availableBefore:a.availableBefore,oldAddress:a.oldAddress,newAddress:a.newAddress,transactionIndex:e.transactionIndex,token:d.token,status:'success' as const};
+    }
+    return {id:e.id,txHash:e.txHash,logIndex:e.logIndex,blockNumber:e.blockNumber,blockHash:e.blockHash,timestamp:e.timestamp,from:a.from,to:a.to,amount:a.amount||a.value||'0',kind:e.name as FlowEvent['kind'],eventName:e.name,source:'token' as const,transactionIndex:e.transactionIndex,token:d.token,status:'success' as const};
+  });}
   readRpc(d:FlowDeployment){return new ReadRpc(this.rpc(d),600,AbortSignal.timeout(30000));}
   sync(){if(this.syncing)return this.syncing;this.syncing=this.syncInner().finally(()=>{this.syncing=undefined;});return this.syncing;}
   async syncInner(){
-    const d=this.deployment(),rpc=this.readRpc(d),abi=readJSON('shared/artifacts/GymToken.json');
+    const d=this.deployment(),rpc=this.readRpc(d),abi=readJSON('shared/artifacts/GymToken.json'),escrowAbi=d.escrow?readJSON('shared/artifacts/GymEscrow.json'):undefined;
     if(Number(BigInt(await rpc.call('eth_chainId',[])))!==d.chainId)throw new Error('RPC 实际网络不匹配');
     const code=await rpc.call('eth_getCode',[d.token,'latest']);if(code==='0x'||keccak256(code)!==keccak256(abi.deployedBytecode))throw new Error('当前链合约与部署记录不匹配，不能展示旧余额');
     const deploymentReceipt=await rpc.call('eth_getTransactionReceipt',[d.deploymentHash]);if(deploymentReceipt.status!=='0x1'||!same(deploymentReceipt.contractAddress,d.token))throw new Error('部署收据无效');
@@ -56,6 +66,7 @@ export class FlowService{
     const cp=this.store.checkpoint(d.id),from=Math.max(d.deploymentBlock,(cp?.blockNumber??d.deploymentBlock-1)+1);
     if(head.number-(cp?.blockNumber??d.deploymentBlock-1)>100000)throw new Error('未同步区块超过安全索引预算，需分批补同步');
     const logs=from<=head.number?await rpc.logs(d.token,from,head.number,[TRANSFER_TOPIC],2000):[];
+    const escrowLogs=d.escrow&&from<=head.number?await rpc.logs(d.escrow,from,head.number,[],2000):[];
     const known=this.events(d),pending:FlowEvent[]=[];
     const firstRecipients=new Set(known.filter(e=>e.kind==='withdrawal').map(e=>e.to.toLowerCase()));
     for(const log of logs.sort((a,b)=>Number(BigInt(a.blockNumber))-Number(BigInt(b.blockNumber))||Number(BigInt(a.logIndex))-Number(BigInt(b.logIndex)))){
@@ -68,8 +79,17 @@ export class FlowService{
       const event:FlowEvent={id:`${d.id}:${decoded.txHash}:${decoded.logIndex}`,txHash:decoded.txHash,logIndex:decoded.logIndex,blockNumber:block.number,blockHash:block.hash,timestamp:block.timestamp,from:fromAddress,to:toAddress,amount:decoded.amount,kind:classifyFlow(d,fromAddress,toAddress),transactionIndex:decoded.transactionIndex,token:decoded.token};
       pending.push(event);
     }
+    for(const log of (escrowLogs||[]).sort((a,b)=>Number(BigInt(a.blockNumber))-Number(BigInt(b.blockNumber))||Number(BigInt(a.logIndex))-Number(BigInt(b.logIndex)))){
+      const decoded=escrowAbi&&d.escrow?decodeEscrowEvent(log,d.escrow,escrowAbi.abi):null;if(!decoded)continue;
+      const a=decoded.args,name=decoded.name,user=a.user||zero,operator=a.operator||d.accounts.merchant;
+      const fromAddress=name==='Deposited'||name==='ConsumptionConfirmed'?user:name==='Refunded'?d.escrow!:operator;
+      const toAddress=name==='Deposited'?d.escrow!:name==='Refunded'?user:name==='Withdrawn'?a.to||zero:name==='PayoutAddressChanged'?a.newAddress||zero:d.escrow!;
+      const block=await rpc.block(decoded.blockNumber);
+      pending.push({id:`${d.id}:${decoded.txHash}:${decoded.logIndex}`,txHash:decoded.txHash,logIndex:decoded.logIndex,blockNumber:block.number,blockHash:block.hash,timestamp:block.timestamp,from:fromAddress,to:toAddress,amount:a.amount||'0',kind:escrowKind(name),eventName:name,source:'escrow',user:a.user,operator:a.operator,requestId:a.id,sessionKey:a.sessionKey,expiresAt:a.expiresAt?Number(a.expiresAt):undefined,availableBefore:a.availableBefore,oldAddress:a.oldAddress,newAddress:a.newAddress,transactionIndex:decoded.transactionIndex,token:d.token,status:'success'});
+    }
+    pending.sort(eventOrder);
     this.store.transaction(()=>{
-      for(const e of pending){this.store.addEvent({id:e.id,datasetId:d.id,chainId:d.chainId,address:d.token,name:e.kind,args:{from:e.from,to:e.to,amount:e.amount},txHash:e.txHash,blockNumber:e.blockNumber,blockHash:e.blockHash,timestamp:e.timestamp,transactionIndex:e.transactionIndex??0,logIndex:e.logIndex,finality:'confirmed'});this.store.put('evidence',{id:e.id,datasetId:d.id,chainId:d.chainId,kind:'event',asOfBlock:e.blockNumber,capturedAt:new Date().toISOString(),txHash:e.txHash,facts:{event:e,source:'eth_getLogs',token:d.token},coverage:{complete:true,missing:[]}});this.store.block(d.id,e.blockNumber,e.blockHash);}
+      for(const e of pending){const isEscrow=e.source==='escrow';const args=Object.fromEntries(Object.entries(isEscrow?{user:e.user,operator:e.operator,id:e.requestId,sessionKey:e.sessionKey,amount:e.amount,expiresAt:e.expiresAt,availableBefore:e.availableBefore,oldAddress:e.oldAddress,newAddress:e.newAddress}:{from:e.from,to:e.to,amount:e.amount}).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)])) as Record<string,string>;this.store.addEvent({id:e.id,datasetId:d.id,chainId:d.chainId,address:isEscrow?d.escrow!:d.token,name:isEscrow?e.eventName||e.kind:e.kind,args,txHash:e.txHash,blockNumber:e.blockNumber,blockHash:e.blockHash,timestamp:e.timestamp,transactionIndex:e.transactionIndex??0,logIndex:e.logIndex,finality:'confirmed'});this.store.put('evidence',{id:e.id,datasetId:d.id,chainId:d.chainId,kind:'event',asOfBlock:e.blockNumber,capturedAt:new Date().toISOString(),txHash:e.txHash,facts:{event:e,source:'eth_getLogs',token:d.token,contract:isEscrow?d.escrow:d.token},coverage:{complete:true,missing:[]}});this.store.block(d.id,e.blockNumber,e.blockHash);}
       this.store.checkpointPut(d.id,{blockNumber:head.number,blockHash:head.hash,timestamp:head.timestamp,coverageComplete:true,coverageFromBlock:d.deploymentBlock,coverageLimited:false});
     });
     this.lastError='';
@@ -77,13 +97,13 @@ export class FlowService{
     void this.drain();
   }
   async overview(address?:string,role?:FlowRole):Promise<FlowOverview>{
-    const base={version:'direct-flow-v1' as const,modelConfigured:!!config.llmKey&&config.llmEnabled,automaticAnalysis:config.autoInvestigation,events:[],jobs:[],reports:[],totalEvents:0,signingEnabled:false};
+    const model=flowModelStatus(),base={version:'direct-flow-v1' as const,modelConfigured:model.configured&&model.enabled,modelReachable:model.reachable,modelError:model.error,automaticAnalysis:config.autoInvestigation,events:[],jobs:[],reports:[],totalEvents:0,signingEnabled:false};
     let d:FlowDeployment;try{d=this.deployment();}catch(error){return {...base,ready:false,error:(error as Error).message};}
     try{
       const accounts=this.ensureAccounts(d);
       await this.sync();const p=new JsonRpcProvider(this.rpc(d),d.chainId,{staticNetwork:true,cacheTimeout:-1});
       let balances:Record<FlowRole,string>;try{const token=new Contract(d.token,readJSON('shared/artifacts/GymToken.json').abi,p);balances=Object.fromEntries(await Promise.all(Object.entries(d.accounts).map(async([r,a])=>[r,(await token.balanceOf(a)).toString()]))) as Record<FlowRole,string>;if(address&&role&&['merchant','userA','userB'].includes(role)){balances[role]=(await token.balanceOf(getAddress(address))).toString();}}finally{p.destroy();}
-      const events=this.events(d);return {...base,ready:true,deployment:d,accounts,balances,checkpoint:this.store.checkpoint(d.id),events:events.slice(-100),totalEvents:events.length,jobs:this.store.list<FlowJob>('jobs',d.id).slice(0,100),reports:this.store.list<FlowReport>('reports',d.id).slice(0,100),signingEnabled:true,monitorError:this.lastError||undefined};
+      const currentModel=flowModelStatus(),events=this.events(d);return {...base,modelReachable:currentModel.reachable,modelError:currentModel.error,ready:true,deployment:d,accounts,balances,checkpoint:this.store.checkpoint(d.id),events:events.slice(-100),totalEvents:events.length,jobs:this.store.list<FlowJob>('jobs',d.id).slice(0,100),reports:this.store.list<FlowReport>('reports',d.id).slice(0,100),signingEnabled:true,monitorError:this.lastError||undefined};
     }catch{this.lastError='链上连接或部署核验失败，历史记录不是最新余额。';return {...base,ready:false,deployment:d,accounts:this.store.accounts().filter(a=>a.id.startsWith(d.id+':')),error:this.lastError,events:this.events(d).slice(-100),jobs:this.store.list<FlowJob>('jobs',d.id).slice(0,100),reports:this.store.list<FlowReport>('reports',d.id).slice(0,100),totalEvents:this.events(d).length};}
   }
   async observe(raw:unknown){
@@ -150,9 +170,24 @@ export class FlowService{
     const execute=async(name:string,raw:any)=>{
       if(name==='list_events')return {data:{events:window.slice(-60),total:window.length,truncated:window.length>60,asOfBlock:job.asOfBlock,limitation:'一笔付款同时是商家收款，不重复计数。初始铸币不是经营收款。'},evidenceIds:ids()};
       if(name==='compute_metrics')return {data:{...flowMetrics(d,events,event),evidenceId:metricsId,formula:{bps:'分子×10000÷分母；10000bps=100%，整数截断',amountRatio:'当前金额÷此前最多20笔同类记录中位数，仅样本>=3时计算',outflowRatio:'24小时商家转出合计÷商家收款合计',concentration:'24小时最大接收方转出合计÷转出合计'},asOfBlock:event.blockNumber},evidenceIds:[metricsId]};
+      if(name==='get_escrow_accounting'){
+        if(!d.escrow)throw new Error('当前部署没有托管合约');
+        const provider=new JsonRpcProvider(this.rpc(d),d.chainId,{staticNetwork:true,cacheTimeout:-1});
+        try{const escrow=new Contract(d.escrow,readJSON('shared/artifacts/GymEscrow.json').abi,provider),token=new Contract(d.token,readJSON('shared/artifacts/GymToken.json').abi,provider),blockTag=event.blockNumber;
+          const [accounting,payout,merchantAvailable,totalUserCredit,tokenAssets]=await Promise.all([escrow.getAccounting({blockTag}),escrow.payoutAddress({blockTag}),escrow.merchantAvailable({blockTag}),escrow.totalUserCredit({blockTag}),token.balanceOf(d.escrow,{blockTag})]);
+          const id=job.id+':escrow:'+event.blockNumber,data={evidenceId:id,blockNumber:event.blockNumber,assets:accounting.assets.toString(),userCredit:accounting.userCredit.toString(),revenue:accounting.revenue.toString(),surplus:accounting.surplus.toString(),deficit:accounting.deficit.toString(),merchantAvailable:merchantAvailable.toString(),totalUserCredit:totalUserCredit.toString(),payoutAddress:payout,tokenAssets:tokenAssets.toString(),invariant:'assets = userCredit + revenue + surplus - deficit'};
+          this.store.put('evidence',{id,datasetId:d.id,chainId:d.chainId,kind:'state',asOfBlock:event.blockNumber,capturedAt:new Date().toISOString(),facts:{escrow:data,contract:d.escrow,token:d.token},coverage:{complete:true,missing:[]}});return {data,evidenceIds:[id]};
+        }finally{provider.destroy();}
+      }
       if(name==='verify_transaction'){
         const chosen=window.find(e=>same(e.txHash,raw.txHash));if(!chosen)throw new Error('查询超出范围');
         const rpc=this.readRpc(d),tx=await rpc.call('eth_getTransactionByHash',[chosen.txHash]),receipt=await rpc.call('eth_getTransactionReceipt',[chosen.txHash]),block=await rpc.block(chosen.blockNumber);
+        if(chosen.source==='escrow'&&d.escrow){
+          const iface=new Interface(readJSON('shared/artifacts/GymEscrow.json').abi),log=receipt.logs.find((l:any)=>Number(BigInt(l.logIndex))===chosen.logIndex&&same(l.address,d.escrow!)),decoded=log?iface.parseLog(log):null;
+          if(receipt.status!=='0x1'||receipt.blockHash!==chosen.blockHash||block.hash!==chosen.blockHash||!decoded||decoded.name!==chosen.eventName)throw new Error('托管事件收据不匹配');
+          const id=chosen.id===event.id?receiptId:job.id+':receipt:'+chosen.id,data={evidenceId:id,chainId:d.chainId,txHash:chosen.txHash,blockNumber:chosen.blockNumber,blockHash:block.hash,status:'confirmed',transactionFrom:tx.from,transactionTo:tx.to,eventName:decoded.name,eventArgs:Object.fromEntries(decoded.fragment.inputs.map((input,index)=>[input.name,String(decoded.args[index])])),explorerUrl:d.chainId===677?'https://scan.botchain.ai/tx/'+chosen.txHash:d.chainId===968?'https://scan.bohr.life/tx/'+chosen.txHash:null,finality:'已入块；不是最终不可逆确认'};
+          this.store.put('evidence',{id,datasetId:d.id,chainId:d.chainId,kind:'transaction',asOfBlock:chosen.blockNumber,capturedAt:new Date().toISOString(),txHash:chosen.txHash,explorerUrl:data.explorerUrl||undefined,facts:data,coverage:{complete:true,missing:[]}});return {data,evidenceIds:[id,chosen.id]};
+        }
         const iface=new Interface(readJSON('shared/artifacts/GymToken.json').abi),log=receipt.logs.find((l:any)=>Number(BigInt(l.logIndex))===chosen.logIndex&&same(l.address,d.token));
         const decoded=log?iface.parseLog(log):null;
         if(receipt.status!=='0x1'||receipt.blockHash!==chosen.blockHash||block.hash!==chosen.blockHash||!decoded||!same(decoded.args.from,chosen.from)||!same(decoded.args.to,chosen.to)||decoded.args.value.toString()!==chosen.amount)throw new Error('收据与事件不匹配');
@@ -173,12 +208,22 @@ export class FlowService{
       throw new Error('只读工具不存在');
     };
     this.store.put('evidence',{id:metricsId,datasetId:d.id,chainId:d.chainId,kind:'metrics',eventId:event.id,asOfBlock:event.blockNumber,capturedAt:new Date().toISOString(),facts:{metrics:flowMetrics(d,events,event),formula:'bps=分子×10000÷分母；窗口为当前事件之前24小时',sourceEventIds:ids()},coverage:{complete:true,missing:[]}});
+    const metrics=flowMetrics(d,events,event);
     const publish=(s:FlowStage)=>{if(this.store.get<FlowJob>('jobs',job.id)?.status==='stale')return;job.stages=[...job.stages.filter(x=>x.name!==s.name),structuredClone(s)];job.status=s.name==='investigator'?'investigating':'reviewing';this.store.put('jobs',job);};
-    const investigator=await runFlowStage('investigator',d,event,job.question,execute,publish);
-    const reviewer=investigator.status==='complete'?await runFlowStage('reviewer',d,event,job.question,execute,publish,investigator):undefined;
-    const complete=investigator.status==='complete'&&reviewer?.status==='complete';
-    const disputed=complete&&(reviewer.result?.verdict==='disagree'||reviewer.result?.risk!==investigator.result?.risk);
-    const metrics=flowMetrics(d,events,event),report:FlowReport={id:randomUUID(),datasetId:d.id,eventId:event.id,asOfBlock:job.asOfBlock,chainId:d.chainId,dataOrigin:d.dataOrigin,status:complete?'complete':'partial',risk:!complete?'insufficient':disputed?'disputed':reviewer.result?.verdict==='insufficient'?'insufficient':reviewer.result!.risk,headline:!complete?'AI 核查未完成':disputed?'两位 Agent 判断不同，待核实':reviewer.result!.summary,metrics,facts:[{text:`本笔转账 ${event.amount} GYM，发送方 ${event.from}，接收方 ${event.to}。`,evidenceIds:[event.id]},{text:`统计窗口收款 ${metrics.receipts} GYM，转出 ${metrics.outflows} GYM；只计算一次付款，不重复计收款。`,evidenceIds:[metricsId]}],stages:job.stages,limitations:[...metrics.limitations,'仅分析已观察到的链上资金行为，不评价未知线下履约；GYM 为无真实价值的测试币。','调查与复核使用同一模型服务，独立调用工具不等于独立模型或完全消除共同偏差。'],generatedAt:new Date().toISOString()};
+    const investigator=await runFlowStage('investigator',d,event,job.question,execute,publish,undefined,undefined,{description:'这是健身预付消费的托管合约演示。充值进入 GymEscrow；会员确认消费后才形成商家可提现收入；提现只能减少已确认收入。',boundary:'所有结论限于当前 GYM、当前部署和截止区块；未查询线下履约、其他资产或未知地址现实身份。'});
+    const reviewer=investigator.status==='complete'?await runFlowStage('reviewer',d,event,job.question,execute,publish,investigator,undefined,{description:'这是健身预付消费的托管合约演示。充值进入 GymEscrow；会员确认消费后才形成商家可提现收入；提现只能减少已确认收入。',boundary:'所有结论限于当前 GYM、当前部署和截止区块；未查询线下履约、其他资产或未知地址现实身份。'}):undefined;
+    let complete=investigator.status==='complete'&&reviewer?.status==='complete',fallback=false;
+    if(!complete){
+      const fallbackRuns:FlowToolRun[]=[];
+      const capture=async(name:string,args:unknown)=>{const run:FlowToolRun={id:randomUUID(),name,arguments:args,at:new Date().toISOString(),status:'error',result:null,evidenceIds:[]};try{const out=await execute(name,args);run.status='ok';run.result=out.data;run.evidenceIds=out.evidenceIds;}catch(error){run.result={error:error instanceof Error?error.message:'工具失败'};}fallbackRuns.push(run);return run;};
+      await capture('list_events',{});await capture('compute_metrics',{});if(d.escrow)await capture('get_escrow_accounting',{});await capture('verify_transaction',{txHash:event.txHash});
+      const good=fallbackRuns.filter(r=>r.status==='ok'),metricEvidence=good.find(r=>r.name==='compute_metrics')?.evidenceIds[0],stateEvidence=good.find(r=>r.name==='get_escrow_accounting')?.evidenceIds[0],txEvidence=good.find(r=>r.name==='verify_transaction')?.evidenceIds[0];
+      const fallbackStage:FlowStage={name:'investigator',status:'complete',model:'deterministic-rules',startedAt:new Date().toISOString(),finishedAt:new Date().toISOString(),toolRuns:fallbackRuns,result:{summary:'模型暂不可用，已完成确定性规则核查；请按证据核对资金变化原因。',risk:metrics.flags.length?'attention':'insufficient',observations:[{type:'inference',text:metrics.flags.length?'规则命中资金变化线索，但这些线索不能单独说明经营原因。':'当前窗口没有命中规则提醒；没有提醒不等于已证明经营正常。',evidenceIds:metricEvidence?[metricEvidence]:[]},{type:'unknown',text:'未查询线下服务履约、未知收款地址控制权和其他协议资产。',evidenceIds:[]}],alternatives:['正常结算、经营支出或收款地址维护都可能产生相同链上模式。'],limitations:['DeepSeek 当前不可用，本次只提供程序生成的规则报告。','GYM 无真实货币价值，报告不能判断线下履约或商家是否会关门。'],recommendation:'核对提现、消费确认和收款地址变更的交易证据；如地址不认识，暂停新增付款并人工联系商家。'}};
+      job.stages=[...job.stages.filter(s=>s.name!=='investigator'&&s.name!=='reviewer'),fallbackStage];job.status='investigating';this.store.put('jobs',job);fallback=true;complete=good.some(r=>r.name==='list_events')&&good.some(r=>r.name==='compute_metrics')&&good.some(r=>r.name==='verify_transaction');
+      if(stateEvidence||txEvidence)fallbackStage.result!.observations.push({type:'inference',text:'已取得托管快照或交易收据，可在证据卡片中核对区块和交易哈希。',evidenceIds:[...new Set([stateEvidence,txEvidence].filter((id):id is string=>!!id))]});
+    }
+    const disputed=complete&&!fallback&&(reviewer?.result?.verdict==='disagree'||reviewer?.result?.risk!==investigator.result?.risk);
+    const report:FlowReport={id:randomUUID(),datasetId:d.id,eventId:event.id,asOfBlock:job.asOfBlock,chainId:d.chainId,dataOrigin:d.dataOrigin,status:complete?'complete':'partial',mode:fallback?'rule-only':'ai',risk:!complete?'insufficient':disputed?'disputed':fallback?(metrics.flags.length?'attention':'insufficient'):reviewer!.result?.verdict==='insufficient'?'insufficient':reviewer!.result!.risk,headline:!complete?'调查取证未完成':fallback?'规则核查报告（模型暂不可用）':disputed?'两位 Agent 判断不同，待核实':reviewer!.result!.summary,metrics,facts:[{text:`本笔业务记录 ${event.amount} GYM，发送方 ${event.from}，接收方 ${event.to}。`,evidenceIds:[event.id]},{text:`统计窗口收款 ${metrics.receipts} GYM，转出 ${metrics.outflows} GYM；金额由程序计算，不重复计数。`,evidenceIds:[metricsId]}],stages:job.stages,limitations:[...metrics.limitations,...(fallback?['模型接口不可用，未生成自然语言模型解释；当前报告只采用确定性工具结果。']:[]),'仅分析已观察到的链上资金行为，不评价未知线下履约；GYM 为无真实价值的测试币。','调查与复核使用同一模型服务，独立调用工具不等于独立模型或完全消除共同偏差。'],generatedAt:new Date().toISOString()};
     const canonical=await this.readRpc(d).block(event.blockNumber);
     if(canonical.hash!==event.blockHash||this.store.get<FlowJob>('jobs',job.id)?.status==='stale'){job.status='stale';job.error='链历史变化，本次调查不可作为当前结论。';this.store.put('jobs',job);return;}
     this.store.put('reports',report);job.status=complete?'complete':'partial';job.reportId=report.id;job.error=complete?undefined:job.stages.find(s=>s.status==='failed')?.error;this.store.put('jobs',job);

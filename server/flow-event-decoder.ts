@@ -13,6 +13,10 @@ export type DecodedFlowTransfer={
   token:string;
 };
 
+export type DecodedEscrowEvent={
+  name:string;args:Record<string,string>;blockNumber:number;blockHash:string;txHash:string;transactionIndex:number;logIndex:number;address:string;
+};
+
 /**
  * Decode one ERC-20 Transfer log returned by eth_getLogs.
  * The decoder is deliberately strict: malformed logs are ignored by the
@@ -35,4 +39,12 @@ export function decodeFlowTransfer(log:RawLog,token:string,abi:unknown[]):Decode
     logIndex:Number(BigInt(log.logIndex)),
     token:getAddress(token),
   };
+}
+
+export function decodeEscrowEvent(log:RawLog,escrow:string,abi:unknown[]):DecodedEscrowEvent|null{
+  if(log.removed||log.address.toLowerCase()!==escrow.toLowerCase())return null;
+  let parsed;try{parsed=new Interface(abi as any).parseLog(log as any);}catch{return null;}
+  if(!parsed)return null;
+  const args:Object=Object.fromEntries(parsed.fragment.inputs.map((input,index)=>[input.name,String(parsed.args[index])]));
+  return {name:parsed.name,args:args as Record<string,string>,blockNumber:Number(BigInt(log.blockNumber)),blockHash:log.blockHash,txHash:log.transactionHash,transactionIndex:Number(BigInt(log.transactionIndex)),logIndex:Number(BigInt(log.logIndex)),address:getAddress(escrow)};
 }
