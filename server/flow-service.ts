@@ -27,7 +27,7 @@ export class FlowService{
   }
   deployment():FlowDeployment{
     const publicMode=process.env.FLOW_NETWORK==='sepolia'||process.env.FLOW_NETWORK==='botchain',network=process.env.FLOW_NETWORK==='botchain'?'botchain':publicMode?'sepolia':'local',file='data/flow/deployment-'+network+'.json';
-    if(!fs.existsSync(file))throw new Error(publicMode?(network==='botchain'?'BOT Chain 测试网尚未部署；请运行 deploy:botchain。':'Sepolia 尚未部署；本地流程可先运行。'):'本地流程尚未初始化，请运行 npm run start。');
+    if(!fs.existsSync(file))throw new Error(publicMode?(network==='botchain'?(config.botchainChainId===677?'BOT Chain 主网尚未部署；请运行 deploy:botchain。':'BOT Chain 测试网尚未部署；请运行 deploy:botchain。'):'Sepolia 尚未部署；本地流程可先运行。'):'本地流程尚未初始化，请运行 npm run start。');
     const d=readJSON<FlowDeployment>(file);if(d.chainId!==(network==='botchain'?config.botchainChainId:publicMode?11155111:31337))throw new Error('部署网络不匹配');
     getAddress(d.token);if(d.escrow)getAddress(d.escrow);for(const a of Object.values(d.accounts))getAddress(a);return d;
   }
