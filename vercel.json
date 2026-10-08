@@ -11,6 +11,7 @@
   },
   "rewrites": [
     { "source": "/api/flow", "destination": "/api/flow-root" },
+    { "source": "/deploy", "destination": "/index.html" },
     { "source": "/consumer", "destination": "/index.html" },
     { "source": "/merchant", "destination": "/index.html" },
     { "source": "/analysis", "destination": "/index.html" }

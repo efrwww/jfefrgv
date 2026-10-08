@@ -8,6 +8,7 @@ import {plainReport} from '../../shared/plain-report';
 import {PlainReportCard} from './plain-report';
 import {ResearchPanel} from './research';
 import {AgentConversation} from './agent-conversation';
+import {DeployPage} from './deploy';
 import './flow.css';
 import './atmosphere.css';
 import './conversation.css';
@@ -91,4 +92,4 @@ function App(){
 }
 const appRoot=import.meta.hot?.data.appRoot??createRoot(document.getElementById('root')!);
 if(import.meta.hot)import.meta.hot.data.appRoot=appRoot;
-appRoot.render(<App/>);
+appRoot.render(location.pathname==='/deploy'?<DeployPage/>:<App/>);
