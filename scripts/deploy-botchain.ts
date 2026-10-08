@@ -6,11 +6,13 @@ import { config, readJSON, writeJSON } from '../server/config.ts';
 import { compile } from './compile.ts';
 
 const chainId = Number(process.env.BOTCHAIN_CHAIN_ID || (process.env.BOTCHAIN_RPC_URL?.includes('bohr.life') ? '968' : '677'));
-const rpcUrl = process.env.BOTCHAIN_RPC_URL || (chainId === 968 ? 'https://rpc.bohr.life' : config.botchainRpc);
+const rpcUrl = process.env.BOTCHAIN_RPC_URL || (chainId === 968 ? 'https://rpc.bohr.life' : 'https://rpc.botchain.ai');
 const explorerBase = process.env.BOTCHAIN_EXPLORER_URL || (chainId === 968 ? 'https://scan.bohr.life' : 'https://scan.botchain.ai');
 const walletFile = path.resolve('.runtime/botchain-wallet.json');
 const execute = process.argv.includes('--execute');
 const explorer = (kind: 'tx' | 'address', value: string) => `${explorerBase}/${kind}/${value}`;
+const deployerPrivateKey = process.env.BOTCHAIN_DEPLOYER_PRIVATE_KEY?.trim();
+const expectedDeployer = process.env.BOTCHAIN_DEPLOYER_ADDRESS?.trim().toLowerCase();
 
 type SavedWallet = { chainId: number; network: string; accounts: Record<string, { address: string; privateKey: string }> };
 
@@ -77,12 +79,15 @@ async function main() {
     compile();
     const tokenArtifact = readJSON<any>('shared/artifacts/GymToken.json');
     const escrowArtifact = readJSON<any>('shared/artifacts/GymEscrow.json');
-    const merchant = new Wallet(saved.accounts.merchant.privateKey);
+    const merchant = deployerPrivateKey ? new Wallet(deployerPrivateKey) : new Wallet(saved.accounts.merchant.privateKey);
+    if (expectedDeployer && merchant.address.toLowerCase() !== expectedDeployer) throw new Error(`部署账户地址不匹配：配置要求 ${expectedDeployer}，实际签名账户为 ${merchant.address}`);
+    if (deployerPrivateKey && merchant.address.toLowerCase() !== '0x295df8b1d573c8332170d03437ddaf36411a29eb') throw new Error(`主网安全校验失败：BOTCHAIN_DEPLOYER_PRIVATE_KEY 对应 ${merchant.address}，不是指定部署账户 0x295DF8b1d573c8332170d03437ddaf36411a29eb`);
     const userA = new Wallet(saved.accounts.userA.privateKey);
     const userB = new Wallet(saved.accounts.userB.privateKey);
-    const balances = Object.fromEntries(Object.entries(saved.accounts).map(([role, account]) => [role, BigInt(rpcCall('eth_getBalance', [account.address, 'latest'])).toString()]));
-    const publicAccounts = Object.fromEntries(Object.entries(saved.accounts).map(([role, account]) => [role, account.address]));
-    const plan = { chainId, network: chainId === 968 ? 'BOT Chain Test' : 'BOT Chain', rpcUrl, execute, merchant: merchant.address, accounts: publicAccounts, nativeBalancesWei: balances, generatedAt: new Date().toISOString(), links: { explorer: explorerBase, faucet: chainId === 968 ? 'https://faucet.bohr.life' : 'https://faucet.botchain.ai/zh/basic', rpc: rpcUrl } };
+    const balanceAccounts = { ...saved.accounts, merchant: { ...saved.accounts.merchant, address: merchant.address } };
+    const balances = Object.fromEntries(Object.entries(balanceAccounts).map(([role, account]) => [role, BigInt(rpcCall('eth_getBalance', [account.address, 'latest'])).toString()]));
+    const publicAccounts = { ...Object.fromEntries(Object.entries(saved.accounts).map(([role, account]) => [role, account.address])), merchant: merchant.address };
+    const plan = { chainId, network: chainId === 968 ? 'BOT Chain Test' : 'BOT Chain', rpcUrl, execute, signerMode: deployerPrivateKey ? 'explicit-env-key' : 'runtime-wallet-file', merchant: merchant.address, accounts: publicAccounts, nativeBalancesWei: balances, generatedAt: new Date().toISOString(), links: { explorer: explorerBase, faucet: chainId === 968 ? 'https://faucet.bohr.life' : 'https://faucet.botchain.ai/zh/basic', rpc: rpcUrl } };
     writeJSON('artifacts/acceptance/botchain-deployment-plan.json', plan);
     console.log(JSON.stringify({ stage: 'preflight', ...plan, merchantExplorer: explorer('address', merchant.address) }));
     if (!execute) return;
@@ -128,7 +133,7 @@ async function main() {
       completedAt: new Date().toISOString()
     };
     writeJSON('artifacts/acceptance/botchain-deployment-proof.json', proof);
-    writeJSON('data/deployments/botchain.json', { id: `botchain-${escrowAddress.toLowerCase()}`, chainId, dataOrigin: 'public-testnet', adapter: 'gym', name: chainId === 968 ? 'BOT Chain Test 健身房演示' : 'BOT Chain 健身房演示', token: deployedToken, escrow: escrowAddress, merchant: merchant.address, payout: saved.accounts.payout.address, nextPayout: saved.accounts.nextPayout.address, users: [userA.address, userB.address], tokenSymbol: 'GYM', decimals: 0, deploymentBlock: proof.deploymentBlock, deploymentHash: proof.deploymentHash, links: proof.links });
+    writeJSON('data/deployments/botchain.json', { id: `botchain-${escrowAddress.toLowerCase()}`, chainId, dataOrigin: chainId === 968 ? 'public-testnet' : 'public-mainnet', adapter: 'gym', name: chainId === 968 ? 'BOT Chain Test 健身房演示' : 'BOT Chain 健身房主网演示', token: deployedToken, escrow: escrowAddress, merchant: merchant.address, payout: saved.accounts.payout.address, nextPayout: saved.accounts.nextPayout.address, users: [userA.address, userB.address], tokenSymbol: 'GYM', decimals: 0, deploymentBlock: proof.deploymentBlock, deploymentHash: proof.deploymentHash, links: proof.links });
     writeJSON('data/flow/deployment-botchain.json', { id: `botchain-${escrowAddress.toLowerCase()}`, chainId, dataOrigin: 'public-testnet', token: deployedToken, escrow: escrowAddress, tokenSymbol: 'GYM', decimals: 0, deploymentBlock: proof.deploymentBlock, deploymentHash: proof.deploymentHash, accounts: { merchant: merchant.address, userA: userA.address, userB: userB.address, payout: saved.accounts.payout.address, nextPayout: saved.accounts.nextPayout.address } });
     console.log(JSON.stringify({ deployed: true, ...proof }));
   } finally { }
