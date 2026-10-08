@@ -10,6 +10,17 @@ type Manifest={chainId:number;dataOrigin:string;token:string;escrow:string;token
 
 function same(a:string,b:string){return a.toLowerCase()===b.toLowerCase();}
 function hash(value:string,label:string){if(!/^0x[0-9a-fA-F]{64}$/.test(value))throw new Error(`${label} 格式无效。`);return value;}
+function runtimeMatches(code:string,artifact:any){
+  if(code.length!==artifact.deployedBytecode.length)return false;
+  const normalize=(value:string)=>{
+    let body=value.slice(2).toLowerCase();
+    for(const ranges of Object.values(artifact.immutableReferences||{}) as {start:number;length:number}[][]){
+      for(const range of ranges){const start=range.start*2,end=(range.start+range.length)*2;body=body.slice(0,start)+'0'.repeat(end-start)+body.slice(end);}
+    }
+    return '0x'+body;
+  };
+  return keccak256(normalize(code))===keccak256(normalize(artifact.deployedBytecode));
+}
 
 async function main(){
   if(!fs.existsSync(manifestPath))throw new Error(`找不到部署清单：${manifestPath}`);
@@ -28,8 +39,8 @@ async function main(){
     if(!tokenReceipt||tokenReceipt.status!==1||!same(tokenReceipt.contractAddress||'0x0000000000000000000000000000000000000000',tokenAddress))throw new Error('GYM Token 部署收据无效。');
     if(!escrowReceipt||escrowReceipt.status!==1||!same(escrowReceipt.contractAddress||'0x0000000000000000000000000000000000000000',escrowAddress))throw new Error('GymEscrow 部署收据无效。');
     const tokenArtifact=readJSON<any>('shared/artifacts/GymToken.json'),escrowArtifact=readJSON<any>('shared/artifacts/GymEscrow.json');
-    if(tokenCode==='0x'||keccak256(tokenCode)!==keccak256(tokenArtifact.deployedBytecode))throw new Error('GYM Token 主网运行时代码与仓库编译产物不匹配。');
-    if(escrowCode==='0x'||keccak256(escrowCode)!==keccak256(escrowArtifact.deployedBytecode))throw new Error('GymEscrow 主网运行时代码与仓库编译产物不匹配。');
+    if(tokenCode==='0x'||!runtimeMatches(tokenCode,tokenArtifact))throw new Error('GYM Token 主网运行时代码与仓库编译产物不匹配。');
+    if(escrowCode==='0x'||!runtimeMatches(escrowCode,escrowArtifact))throw new Error('GymEscrow 主网运行时代码与仓库编译产物不匹配。');
     const token=new Contract(tokenAddress,tokenArtifact.abi,p),escrow=new Contract(escrowAddress,escrowArtifact.abi,p);
     const [symbol,decimals,totalSupply,balanceA,balanceB,boundToken,boundMerchant,boundPayout]=await Promise.all([token.symbol(),token.decimals(),token.totalSupply(),token.balanceOf(userA),token.balanceOf(userB),escrow.token(),escrow.merchant(),escrow.payoutAddress()]);
     if(symbol!=='GYM'||Number(decimals)!==0||totalSupply!==6000n||balanceA!==3000n||balanceB!==3000n)throw new Error('GYM Token 名称、精度、总量或会员初始额度不符合部署预期。');
