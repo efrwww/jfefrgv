@@ -26,8 +26,11 @@ export class FlowService{
     for(const job of this.store.list<FlowJob>('jobs'))if(['investigating','reviewing'].includes(job.status))this.store.put('jobs',{...job,status:'partial',error:'服务重启中断调查，请重新核查。'});
   }
   deployment():FlowDeployment{
-    const publicMode=process.env.FLOW_NETWORK==='sepolia'||process.env.FLOW_NETWORK==='botchain',network=process.env.FLOW_NETWORK==='botchain'?'botchain':publicMode?'sepolia':'local',file='data/flow/deployment-'+network+'.json';
-    if(!fs.existsSync(file))throw new Error(publicMode?(network==='botchain'?(config.botchainChainId===677?'BOT Chain 主网尚未部署；请运行 deploy:botchain。':'BOT Chain 测试网尚未部署；请运行 deploy:botchain。'):'Sepolia 尚未部署；本地流程可先运行。'):'本地流程尚未初始化，请运行 npm run start。');
+    const publicMode=process.env.FLOW_NETWORK==='sepolia'||process.env.FLOW_NETWORK==='botchain',network=process.env.FLOW_NETWORK==='botchain'?'botchain':publicMode?'sepolia':'local';
+    const chainSpecificFile=network==='botchain'?`data/flow/deployment-botchain-${config.botchainChainId}.json`:undefined;
+    const legacyFile=network==='botchain'&&config.botchainChainId===968?'data/flow/deployment-botchain.json':undefined;
+    const file=chainSpecificFile&&fs.existsSync(chainSpecificFile)?chainSpecificFile:legacyFile&&fs.existsSync(legacyFile)?legacyFile:`data/flow/deployment-${network}.json`;
+    if(!fs.existsSync(file))throw new Error(publicMode?(network==='botchain'?(config.botchainChainId===677?'BOT Chain 主网尚未部署；先在 MetaMask 部署合约并导入 deployment-botchain-677.json。':'BOT Chain 测试网尚未部署；请运行 deploy:botchain。'):'Sepolia 尚未部署；本地流程可先运行。'):'本地流程尚未初始化，请运行 npm run start。');
     const d=readJSON<FlowDeployment>(file);if(d.chainId!==(network==='botchain'?config.botchainChainId:publicMode?11155111:31337))throw new Error('部署网络不匹配');
     getAddress(d.token);if(d.escrow)getAddress(d.escrow);for(const a of Object.values(d.accounts))getAddress(a);return d;
   }
