@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {flowMetrics,classifyFlow} from '../server/flow-metrics.ts';
-import {validateFlowInterpretation,runFlowStage} from '../server/flow-agent.ts';
+import {validateFlowInterpretation,runFlowStage,modelHttpError} from '../server/flow-agent.ts';
 import type {FlowDeployment,FlowEvent,FlowToolRun} from '../shared/flow.ts';
 const a=(n:number)=>'0x'+n.toString(16).padStart(40,'0');
 const d:FlowDeployment={id:'test',chainId:31337,dataOrigin:'local-chain',token:a(8),tokenSymbol:'GYM',decimals:0,deploymentBlock:1,deploymentHash:'0x'+'0'.repeat(64),accounts:{merchant:a(1),userA:a(2),userB:a(3),payout:a(4),nextPayout:a(5)}};
@@ -15,3 +15,17 @@ const runs:FlowToolRun[]=[{id:'x',name:'compute_metrics',arguments:{},at:'now',s
 test('拒绝伪造证据及无依据跑路断言',()=>{assert.doesNotThrow(()=>validateFlowInterpretation(conclusion,false,runs));assert.throws(()=>validateFlowInterpretation({...conclusion,observations:[{type:'inference',text:'异常',evidenceIds:['fake']}]},false,runs));assert.throws(()=>validateFlowInterpretation({...conclusion,summary:'确定跑路'},false,runs));});
 test('两位 Agent 必须各自调用工具，不是改名复述',async()=>{let calls=0;const model=async(body:Record<string,unknown>)=>{calls++;if(body.tools)return {tool_calls:['list_events','compute_metrics','verify_transaction'].map((name,i)=>({id:'call'+i,type:'function',function:{name,arguments:JSON.stringify(name==='verify_transaction'?{txHash:event(1,'1').txHash}:{})}}))};const review=JSON.stringify(body.messages).includes('独立复核 Agent');return {content:JSON.stringify({...conclusion,...(review?{verdict:'agree'}:{})})};};const execute=async()=>({data:{actualTestFixture:true},evidenceIds:['known']});const i=await runFlowStage('investigator',d,event(1,'1'),'测试',execute,()=>{},undefined,model);const r=await runFlowStage('reviewer',d,event(1,'1'),'测试',execute,()=>{},i,model);assert.equal(i.status,'complete');assert.equal(r.status,'complete');assert.equal(i.toolRuns.length,3);assert.equal(r.toolRuns.length,3);assert.equal(calls,4);});
 test('工具失败不得生成成功报告',async()=>{const s=await runFlowStage('investigator',d,event(1,'1'),'test',async()=>{throw Error('offline');},()=>{},undefined,async()=>({tool_calls:[{id:'x',function:{name:'compute_metrics',arguments:'{}'}}]}));assert.equal(s.status,'failed');assert.equal(s.result,undefined);});
+test('模型接口的状态码要翻成人话，同时保留状态码',async()=>{
+  // 402 是实际生产环境遇到的情况：DeepSeek 余额用尽
+  assert.equal(modelHttpError(402),'模型服务额度不足，自动核查暂时无法进行，需要维护者充值后重启服务（HTTP 402）');
+  assert.equal(modelHttpError(401),'模型服务的密钥无效，自动核查已停用，需要维护者更新配置（HTTP 401）');
+  assert.ok(modelHttpError(429).includes('稍后重试')&&modelHttpError(429).includes('HTTP 429'));
+  // 没收录的状态码也要能看懂，不能漏出裸状态码
+  assert.ok(modelHttpError(418).includes('HTTP 418'));
+  assert.ok(modelHttpError(418).startsWith('模型服务请求失败'));
+  // 每个已知状态码都必须带 HTTP 后缀，失败分支靠它识别
+  for(const s of [400,401,402,403,429,500,502,503])assert.ok(/（HTTP \d+）$/.test(modelHttpError(s)),`状态码 ${s} 缺少后缀`);
+  // 失败分支必须原样保留这句话，否则会被替换成笼统文案
+  const stage=await runFlowStage('investigator',d,event(1,'1'),'test',async()=>({data:{},evidenceIds:['known']}),()=>{},undefined,async()=>{throw new Error(modelHttpError(402))});
+  assert.equal(stage.status,'failed');assert.equal(stage.error,modelHttpError(402));assert.equal(stage.result,undefined);
+});

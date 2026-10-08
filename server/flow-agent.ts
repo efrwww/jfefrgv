@@ -31,11 +31,25 @@ export function validateFlowInterpretation(raw:unknown,review:boolean,runs:FlowT
 }
 export type FlowToolExecutor=(name:string,args:unknown)=>Promise<{data:unknown;evidenceIds:string[]}>;
 export type FlowModel=(body:Record<string,unknown>,signal:AbortSignal)=>Promise<any>;
+/** 把模型接口的 HTTP 状态码转成普通用户能看懂的话，同时保留状态码便于排查。 */
+export function modelHttpError(status:number){
+  const known:Record<number,string>={
+    400:'模型拒绝了这次请求，可能是对话内容或参数不符合要求',
+    401:'模型服务的密钥无效，自动核查已停用，需要维护者更新配置',
+    402:'模型服务额度不足，自动核查暂时无法进行，需要维护者充值后重启服务',
+    403:'模型服务拒绝了这次访问，请检查密钥权限',
+    429:'模型服务请求过于频繁，稍后重试即可',
+    500:'模型服务内部出错，稍后重试即可',
+    502:'模型服务网关出错，稍后重试即可',
+    503:'模型服务暂时不可用，稍后重试即可',
+  };
+  return `${known[status]??'模型服务请求失败'}（HTTP ${status}）`;
+}
 export async function callFlowModel(body:Record<string,unknown>,signal:AbortSignal){
   if(!config.llmKey||!config.llmEnabled){markModel(false,'模型未配置或未启用');throw new Error('模型未配置或未启用');}
   const base=new URL(config.llmBase);if(base.protocol!=='https:'||base.hostname!=='api.deepseek.com'){markModel(false,'模型服务地址不在允许范围');throw new Error('模型服务地址不在允许范围');}
   try{const res=await fetch(new URL('/chat/completions',base),{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${config.llmKey}`},body:JSON.stringify({model:config.llmModel,thinking:{type:'disabled'},max_tokens:2400,...body}),signal});
-    if(!res.ok){const error='模型接口 HTTP '+res.status;markModel(false,error);throw new Error(error);}const json=await res.json();if(!json.choices?.[0]?.message){markModel(false,'模型未返回有效结果');throw new Error('模型未返回有效结果');}markModel(true);return json.choices[0].message;
+    if(!res.ok){const error=modelHttpError(res.status);markModel(false,error);throw new Error(error);}const json=await res.json();if(!json.choices?.[0]?.message){markModel(false,'模型未返回有效结果');throw new Error('模型未返回有效结果');}markModel(true);return json.choices[0].message;
   }catch(error){markModel(false,error instanceof Error?error.message:'模型请求失败');throw error;}
 }
 export type FlowAnalysisContext={description:string;boundary:string;validate?:(result:NonNullable<FlowStage['result']>,runs:FlowToolRun[])=>void};
@@ -80,6 +94,6 @@ export async function runFlowStage(name:FlowStage['name'],d:{chainId:number;data
       stage.result=validate(JSON.parse(msg.content));
     }
     stage.status='complete';
-  }catch(error){stage.status='failed';const m=error instanceof Error?error.message:'';stage.error=/^模型接口 HTTP \d+$/.test(m)?m:signal.aborted?'Agent 超过时间预算':m==='模型未配置或未启用'?m:error instanceof z.ZodError?'报告字段格式未通过校验：'+error.issues.map(i=>i.path.join('.')+':'+i.code).join('；'):['Inference needs evidence','Unknown evidence reference','Unsupported criminal prediction'].includes(m)||context&&/^(Unsupported|Unproven|Reversed|Wrong|Unknown,|Unverified)/.test(m)?'报告证据或结论校验未通过：'+m.slice(0,350):'取证或报告核验未完成，可重试；不会伪装为成功的 AI 报告。';}
+  }catch(error){stage.status='failed';const m=error instanceof Error?error.message:'';stage.error=/（HTTP \d+）$/.test(m)?m:signal.aborted?'Agent 超过时间预算':m==='模型未配置或未启用'?m:error instanceof z.ZodError?'报告字段格式未通过校验：'+error.issues.map(i=>i.path.join('.')+':'+i.code).join('；'):['Inference needs evidence','Unknown evidence reference','Unsupported criminal prediction'].includes(m)||context&&/^(Unsupported|Unproven|Reversed|Wrong|Unknown,|Unverified)/.test(m)?'报告证据或结论校验未通过：'+m.slice(0,350):'取证或报告核验未完成，可重试；不会伪装为成功的 AI 报告。';}
   stage.finishedAt=new Date().toISOString();publish(stage);return stage;
 }
