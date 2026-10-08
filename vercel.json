@@ -10,6 +10,7 @@
     }
   },
   "rewrites": [
+    { "source": "/api/flow", "destination": "/api/flow-root" },
     { "source": "/consumer", "destination": "/index.html" },
     { "source": "/merchant", "destination": "/index.html" },
     { "source": "/analysis", "destination": "/index.html" }
