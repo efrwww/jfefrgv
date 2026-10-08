@@ -15,9 +15,8 @@ export function DeployPage(){
   const [account,setAccount]=useState('');
   const [chainId,setChainId]=useState<number>();
   const [memberA,setMemberA]=useState('');
-  const [memberB,setMemberB]=useState('');
   const [payout,setPayout]=useState(EXPECTED);
-  const [steps,setSteps]=useState<Step[]>([{label:'连接指定 MetaMask 账户',status:'waiting'},{label:'部署 GymToken（每个会员 3,000 GYM）',status:'waiting'},{label:'部署 GymEscrow（商家按确认消费提现）',status:'waiting'}]);
+  const [steps,setSteps]=useState<Step[]>([{label:'连接指定 MetaMask 账户',status:'waiting'},{label:'部署 GymToken（会员 A 获得 3,000 GYM）',status:'waiting'},{label:'部署 GymEscrow（商家按确认消费提现）',status:'waiting'}]);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [done,setDone]=useState<{token:string;escrow:string;deploymentBlock:number;deploymentHash:string;escrowHash:string}>();
@@ -45,12 +44,11 @@ export function DeployPage(){
     if(busy)return;
     try{
       if(!wallet||!account||chainId!==CHAIN_ID)throw new Error('请先连接指定 MetaMask 账户并切换到 Chain ID 677。');
-      const a=validateAddress(memberA,'会员 A'),b=validateAddress(memberB,'会员 B'),p=validateAddress(payout,'收款账户');
-      if(a.toLowerCase()===b.toLowerCase())throw new Error('会员 A 和会员 B 不能使用同一地址。');
-      if(a.toLowerCase()===account.toLowerCase()||b.toLowerCase()===account.toLowerCase())throw new Error('会员地址不能与商家部署账户相同。');
+      const a=validateAddress(memberA,'会员 A'),p=validateAddress(payout,'收款账户');
+      if(a.toLowerCase()===account.toLowerCase())throw new Error('会员地址不能与商家部署账户相同。');
       setBusy(true);update(1,{status:'running'});
       const signer=await wallet.getSigner(account);
-      const token=await new ContractFactory(tokenArtifact.abi,tokenArtifact.bytecode,signer).deploy([a,b],[3000n,3000n]);
+      const token=await new ContractFactory(tokenArtifact.abi,tokenArtifact.bytecode,signer).deploy([a],[3000n]);
       update(1,{status:'running',hash:token.deploymentTransaction()?.hash});
       await token.waitForDeployment();
       const tokenAddress=await token.getAddress(),tokenTx=token.deploymentTransaction();
@@ -76,14 +74,14 @@ export function DeployPage(){
       setSteps(current=>current.map(step=>step.status==='running'?{...step,status:'error',error:message}:step));
     }finally{setBusy(false);}
   }
-  const manifest=done?JSON.stringify({id:`botchain-${done.escrow.toLowerCase()}`,chainId:CHAIN_ID,dataOrigin:'public-mainnet',token:done.token,escrow:done.escrow,tokenSymbol:'GYM',decimals:0,deploymentBlock:done.deploymentBlock,deploymentHash:done.deploymentHash,escrowDeploymentHash:done.escrowHash,accounts:{merchant:account,userA:getAddress(memberA),userB:getAddress(memberB),payout:getAddress(payout),nextPayout:getAddress(payout)},links:{token:scan('address',done.token),escrow:scan('address',done.escrow),tokenDeployment:scan('tx',done.deploymentHash),escrowDeployment:scan('tx',done.escrowHash)}},null,2):'';
+  const manifest=done?JSON.stringify({id:`botchain-${done.escrow.toLowerCase()}`,chainId:CHAIN_ID,dataOrigin:'public-mainnet',mode:'single-member',token:done.token,escrow:done.escrow,tokenSymbol:'GYM',decimals:0,deploymentBlock:done.deploymentBlock,deploymentHash:done.deploymentHash,escrowDeploymentHash:done.escrowHash,accounts:{merchant:account,userA:getAddress(memberA),userB:getAddress(memberA),payout:getAddress(payout),nextPayout:getAddress(payout)},links:{token:scan('address',done.token),escrow:scan('address',done.escrow),tokenDeployment:scan('tx',done.deploymentHash),escrowDeployment:scan('tx',done.escrowHash)}},null,2):'';
   async function copy(){if(manifest)await navigator.clipboard.writeText(manifest);}
   return <div className="app-shell"><div className="main-shell" style={{marginLeft:0,width:'100%'}}><main><div className="page-heading"><div><span className="eyebrow">MetaMask 主网部署</span><h1>部署到 BOT Chain 677</h1><p>私钥留在 MetaMask；页面只提交你确认的交易。</p></div><a className="secondary" href="/analysis">返回调查页</a></div>
     <section className="card" style={{maxWidth:900,margin:'0 auto'}}>
       <div className="message"><strong>部署账户</strong><br/>必须是 <span className="mono">{EXPECTED}</span><br/>网络：BOT Chain · Chain ID 677 · <a href="https://scan.botchain.ai" target="_blank" rel="noreferrer">区块浏览器</a></div>
       <div className="buttons" style={{margin:'18px 0'}}><button className="primary" disabled={busy} onClick={()=>void connect().catch(e=>setError(e.message))}>{account?`已连接 ${account.slice(0,6)}…${account.slice(-4)}`:'连接 MetaMask 并切换主网'}</button>{chainId===CHAIN_ID&&<span className="subtle">网络已确认</span>}</div>
-      <div className="forms stacked"><label>会员 A 钱包地址<input value={memberA} onChange={e=>setMemberA(e.target.value)} placeholder="0x…" disabled={busy}/></label><label>会员 B 钱包地址<input value={memberB} onChange={e=>setMemberB(e.target.value)} placeholder="0x…" disabled={busy}/></label><label>商家收款地址<input value={payout} onChange={e=>setPayout(e.target.value)} placeholder="默认使用指定账户" disabled={busy}/></label></div>
-      <p className="muted">部署会铸造两份各 3,000 GYM 演示额度。GYM 是固定演示代币，不代表人民币，也不具备升值承诺。</p>
+      <div className="forms stacked"><label>会员 A 钱包地址<input value={memberA} onChange={e=>setMemberA(e.target.value)} placeholder="0x…" disabled={busy}/></label><label>商家收款地址<input value={payout} onChange={e=>setPayout(e.target.value)} placeholder="默认使用指定账户" disabled={busy}/></label></div>
+      <p className="muted">部署会为会员 A 铸造 3,000 GYM 演示额度。GYM 是固定演示代币，不代表人民币，也不具备升值承诺。</p>
       {error&&<p className="error" role="alert">{error}</p>}
       <ol className="deploy-steps">{steps.map((step,i)=><li key={step.label} className={step.status}><span>{step.status==='done'?'✓':step.status==='running'?'…':step.status==='error'?'!':i+1}</span><div><strong>{step.label}</strong>{step.address&&<a className="block mono" href={scan('address',step.address)} target="_blank" rel="noreferrer">合约：{step.address}</a>}{step.hash&&<a className="block mono" href={scan('tx',step.hash)} target="_blank" rel="noreferrer">交易：{step.hash}</a>}{step.error&&<small className="error">{step.error}</small>}</div></li>)}</ol>
       <button className="primary full-width" disabled={busy||!account||chainId!==CHAIN_ID} onClick={()=>void deploy()}>{busy?'等待 MetaMask 确认…':'开始部署两个合约'}</button>

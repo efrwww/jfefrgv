@@ -29,7 +29,8 @@ async function main(){
   if(m.tokenSymbol!=='GYM'||m.decimals!==0)throw new Error('仅支持当前 GYM 演示代币参数。');
   const tokenAddress=getAddress(m.token),escrowAddress=getAddress(m.escrow),merchant=getAddress(m.accounts.merchant),userA=getAddress(m.accounts.userA),userB=getAddress(m.accounts.userB),payout=getAddress(m.accounts.payout),nextPayout=getAddress(m.accounts.nextPayout);
   if(!same(merchant,expectedMerchant))throw new Error(`商家/部署账户必须为 ${expectedMerchant}。`);
-  if(same(userA,userB)||[userA,userB].some(a=>same(a,merchant)))throw new Error('会员账户必须彼此不同，且不能与商家账户相同。');
+  const singleMember=same(userA,userB);
+  if([userA,userB].some(a=>same(a,merchant)))throw new Error('会员账户不能与商家账户相同。');
   const tokenHash=hash(m.deploymentHash,'Token 部署交易哈希'),escrowHash=hash(m.escrowDeploymentHash,'Escrow 部署交易哈希');
   const p=new JsonRpcProvider(rpcUrl,chainId,{staticNetwork:true,cacheTimeout:-1});
   try{
@@ -43,11 +44,12 @@ async function main(){
     if(escrowCode==='0x'||!runtimeMatches(escrowCode,escrowArtifact))throw new Error('GymEscrow 主网运行时代码与仓库编译产物不匹配。');
     const token=new Contract(tokenAddress,tokenArtifact.abi,p),escrow=new Contract(escrowAddress,escrowArtifact.abi,p);
     const [symbol,decimals,totalSupply,balanceA,balanceB,boundToken,boundMerchant,boundPayout]=await Promise.all([token.symbol(),token.decimals(),token.totalSupply(),token.balanceOf(userA),token.balanceOf(userB),escrow.token(),escrow.merchant(),escrow.payoutAddress()]);
-    if(symbol!=='GYM'||Number(decimals)!==0||totalSupply!==6000n||balanceA!==3000n||balanceB!==3000n)throw new Error('GYM Token 名称、精度、总量或会员初始额度不符合部署预期。');
+    const expectedSupply=singleMember?3000n:6000n;
+    if(symbol!=='GYM'||Number(decimals)!==0||totalSupply!==expectedSupply||balanceA!==3000n||balanceB!==3000n)throw new Error('GYM Token 名称、精度、总量或会员初始额度不符合部署预期。');
     if(!same(boundToken,tokenAddress)||!same(boundMerchant,merchant)||!same(boundPayout,payout))throw new Error('GymEscrow 构造参数与部署清单不一致。');
     const id=`botchain-${escrowAddress.toLowerCase()}`;
     const links={token:`https://scan.botchain.ai/address/${tokenAddress}`,escrow:`https://scan.botchain.ai/address/${escrowAddress}`,tokenDeployment:`https://scan.botchain.ai/tx/${tokenHash}`,escrowDeployment:`https://scan.botchain.ai/tx/${escrowHash}`};
-    const flow={id,chainId,dataOrigin:'public-mainnet' as const,token:tokenAddress,escrow:escrowAddress,tokenSymbol:'GYM',decimals:0,deploymentBlock:tokenReceipt.blockNumber,deploymentHash:tokenHash,accounts:{merchant,userA,userB,payout,nextPayout}};
+    const flow={id,chainId,dataOrigin:'public-mainnet' as const,mode:singleMember?'single-member':'multi-member',token:tokenAddress,escrow:escrowAddress,tokenSymbol:'GYM',decimals:0,deploymentBlock:tokenReceipt.blockNumber,deploymentHash:tokenHash,accounts:{merchant,userA,userB,payout,nextPayout}};
     const dataset={...flow,adapter:'gym',name:'BOT Chain 677 健身房主网演示',users:[userA,userB],links};
     writeJSON('data/flow/deployment-botchain-677.json',flow);
     writeJSON('data/deployments/botchain-677.json',dataset);
