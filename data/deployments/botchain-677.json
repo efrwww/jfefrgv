@@ -1,0 +1,31 @@
+{
+  "id": "botchain-0x4b18c8d7b83c6b2af7bfbe32696aafc6af0d4c15",
+  "chainId": 677,
+  "dataOrigin": "public-mainnet",
+  "mode": "single-member",
+  "token": "0x4add6339935fd3e7128c775b06fb19b4b3318284",
+  "escrow": "0x4b18c8d7b83c6b2af7bfbe32696aafc6af0d4c15",
+  "tokenSymbol": "GYM",
+  "decimals": 0,
+  "deploymentBlock": 25929423,
+  "deploymentHash": "0xb2e1d8fb9736f44cafb14e866a0f65788e08240979e4264f0668f368369d2c0e",
+  "accounts": {
+    "merchant": "0x295DF8b1d573c8332170d03437ddaf36411a29eb",
+    "userA": "0xd9a446D5ec7fe44f1583E5FE8B39267836064A19",
+    "userB": "0xd9a446D5ec7fe44f1583E5FE8B39267836064A19",
+    "payout": "0x295DF8b1d573c8332170d03437ddaf36411a29eb",
+    "nextPayout": "0x295DF8b1d573c8332170d03437ddaf36411a29eb"
+  },
+  "adapter": "gym",
+  "name": "BOT Chain 677 健身房主网演示",
+  "users": [
+    "0xd9a446D5ec7fe44f1583E5FE8B39267836064A19",
+    "0xd9a446D5ec7fe44f1583E5FE8B39267836064A19"
+  ],
+  "links": {
+    "token": "https://scan.botchain.ai/address/0x4add6339935fd3e7128c775b06fb19b4b3318284",
+    "escrow": "https://scan.botchain.ai/address/0x4b18c8d7b83c6b2af7bfbe32696aafc6af0d4c15",
+    "tokenDeployment": "https://scan.botchain.ai/tx/0xb2e1d8fb9736f44cafb14e866a0f65788e08240979e4264f0668f368369d2c0e",
+    "escrowDeployment": "https://scan.botchain.ai/tx/0x41095b966e6466d9cfef31857ac6fb2d7044ab3fb7cc68b61eda7f94f69d4ca2"
+  }
+}
