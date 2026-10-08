@@ -1,3 +1,2 @@
-import handler from './[...path]';
-
+import handler from '../flow-handler';
 export default handler;
