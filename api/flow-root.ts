@@ -39,7 +39,9 @@ function send(res: VercelResponse, data: unknown, status = 200) { return res.sta
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
-  const path = Array.isArray(req.query.path) ? req.query.path.join('/') : String(req.query.path || '');
+  const queryPath = Array.isArray(req.query.path) ? req.query.path.join('/') : String(req.query.path || '');
+  const requestPath = String(req.url || '').split('?')[0];
+  const path = queryPath || (requestPath.startsWith('/api/flow/') ? decodeURIComponent(requestPath.slice('/api/flow/'.length)) : '');
   if (req.method === 'GET' && !path) return send(res, overview);
   if (req.method === 'GET' && path === 'accounts') return send(res, overview.accounts);
   if (req.method === 'GET' && path.startsWith('jobs/')) return send(res, overview.jobs[0]);
