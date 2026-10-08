@@ -44,9 +44,9 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   const path = queryPath || (requestPath.startsWith('/api/flow/') ? decodeURIComponent(requestPath.slice('/api/flow/'.length)) : '');
   if (req.method === 'GET' && !path) return send(res, overview);
   if (req.method === 'GET' && path === 'accounts') return send(res, overview.accounts);
-  if (req.method === 'GET' && path.startsWith('jobs/')) return send(res, overview.jobs[0]);
-  if (req.method === 'GET' && path.startsWith('reports/')) return send(res, report);
-  if (req.method === 'GET' && path.startsWith('evidence/')) return send(res, { id: evidenceId, datasetId: overview.deployment.id, chainId: 31337, kind: 'event', asOfBlock: 1, txHash, explorerUrl: null, facts: { event, source: 'Vercel static demo fixture' }, coverage: { complete: true, missing: [] } });
+  if (req.method === 'GET' && (path === 'jobs' || path.startsWith('jobs/'))) return send(res, overview.jobs[0]);
+  if (req.method === 'GET' && (path === 'reports' || path.startsWith('reports/'))) return send(res, report);
+  if (req.method === 'GET' && (path === 'evidence' || path.startsWith('evidence/'))) return send(res, { id: evidenceId, datasetId: overview.deployment.id, chainId: 31337, kind: 'event', asOfBlock: 1, txHash, explorerUrl: null, facts: { event, source: 'Vercel static demo fixture' }, coverage: { complete: true, missing: [] } });
   if (req.method === 'POST' && path === 'investigations') return send(res, overview.jobs[0], 202);
   if (req.method === 'POST' && path === 'transfers') return res.status(400).json({ error: { message: 'Vercel 展示模式为只读；付款与签名请在本地 Anvil 演示。' } });
   return res.status(404).json({ error: { message: 'Vercel 展示模式未提供此接口。' } });
