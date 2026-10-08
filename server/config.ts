@@ -11,12 +11,23 @@ function csv(name:string, fallback:string[]){
   const value=process.env[name];
   return value===undefined?fallback:value.split(',').map(s=>s.trim()).filter(Boolean);
 }
+// Once the verified 677 deployment manifest is present, production must not
+// silently keep serving the older 968 testnet. Testnet use is an explicit
+// development opt-in so a stale server environment cannot route real users to
+// the wrong chain.
+const mainnetManifestPresent=fs.existsSync(path.resolve('data/flow/deployment-botchain-677.json'));
+const allowBotchainTestnet=process.env.ALLOW_BOTCHAIN_TESTNET==='true';
+const botchainMainnetLocked=mainnetManifestPresent&&!allowBotchainTestnet;
+const configuredBotchainChainId=Number(process.env.BOTCHAIN_CHAIN_ID||677);
+const configuredBotchainRpc=process.env.BOTCHAIN_RPC_URL;
 export const config={
   port:Number(process.env.API_PORT||3001), webPort:Number(process.env.WEB_PORT||5173), researchPort:Number(process.env.RESEARCH_PORT||3002), localRpc:process.env.LOCAL_RPC_URL||'http://127.0.0.1:8545',
   mainnetRpc:process.env.MAINNET_RPC_URL||'https://ethereum.publicnode.com',
   mainnetFallbackRpc:process.env.MAINNET_FALLBACK_RPC_URL||'https://eth.drpc.org/',
   sepoliaRpc:process.env.SEPOLIA_RPC_URL||'https://ethereum-sepolia.publicnode.com',
-  botchainRpc:process.env.BOTCHAIN_RPC_URL||'https://rpc.bohr.life', botchainChainId:Number(process.env.BOTCHAIN_CHAIN_ID||968),
+  botchainRpc:botchainMainnetLocked?'https://rpc.botchain.ai':configuredBotchainRpc||(configuredBotchainChainId===968?'https://rpc.bohr.life':'https://rpc.botchain.ai'),
+  botchainChainId:botchainMainnetLocked?677:configuredBotchainChainId,
+  botchainMainnetLocked,
   llmBase:process.env.LLM_BASE_URL||'https://api.deepseek.com', llmModel:process.env.LLM_MODEL||'deepseek-flash',
   llmKey:process.env.LLM_API_KEY||'', llmEnabled:process.env.LLM_ENABLED!=='false',
   faucetKey:process.env.FAUCET_PRIVATE_KEY||'', faucetAmount:BigInt(process.env.FAUCET_AMOUNT||'3000'),
