@@ -10,7 +10,7 @@ const scan=(kind:'tx'|'address',value:string)=>`https://scan.botchain.ai/${kind}
 
 type Step={label:string;status:'waiting'|'running'|'done'|'error';hash?:string;address?:string;error?:string};
 
-export function DeployPage(){
+export function DeployPanel({embedded=false}:{embedded?:boolean}={}){
   const [account,setAccount]=useState('');
   const [chainId,setChainId]=useState<number>();
   const [memberA,setMemberA]=useState('');
@@ -101,8 +101,8 @@ export function DeployPage(){
   const memberAValid=(()=>{try{return isAddress(memberA)&&memberA.toLowerCase()!==account.toLowerCase();}catch{return false;}})();
   const payoutValid=(()=>{try{return isAddress(payout);}catch{return false;}})();
   async function copy(){if(manifest)await navigator.clipboard.writeText(manifest);}
-  return <div className="app-shell"><div className="main-shell" style={{marginLeft:0,width:'100%'}}><main><div className="page-heading"><div><span className="eyebrow">MetaMask 主网部署</span><h1>部署到 BOT Chain 677</h1><p>私钥留在 MetaMask；页面只提交你确认的交易。</p></div><a className="secondary" href="/analysis">返回调查页</a></div>
-    <section className="card" style={{maxWidth:900,margin:'0 auto'}}>
+  return <div className={embedded?'deployment-inline':'app-shell'}><div className="main-shell" style={{marginLeft:0,width:'100%'}}><main><div className="page-heading"><div><span className="eyebrow">MetaMask 主网部署</span><h1>{embedded?'部署或更新 BOT Chain 677 合约':'部署到 BOT Chain 677'}</h1><p>私钥留在 MetaMask；页面只提交你确认的交易。</p></div>{embedded?<span className="demo-tag">商家工具</span>:<a className="secondary" href="/analysis">返回调查页</a>}</div>
+    <section className="card" style={embedded?{margin:'0'}:{maxWidth:900,margin:'0 auto'}}>
       <div className="message"><strong>部署账户</strong><br/>必须是 <span className="mono">{EXPECTED}</span><br/>网络：BOT Chain · Chain ID 677 · <a href="https://scan.botchain.ai" target="_blank" rel="noreferrer">区块浏览器</a></div>
       <div className="buttons" style={{margin:'18px 0'}}><button className="primary" disabled={busy} onClick={()=>void connect().catch(e=>{setError(readableError(e));setStatusMessage('钱包连接未完成。');})}>{account?`已连接 ${account.slice(0,6)}…${account.slice(-4)}`:'连接 MetaMask 并切换主网'}</button>{chainId===CHAIN_ID&&<span className="subtle">网络已确认</span>}</div>
       <div className="forms stacked"><label>会员 A 钱包地址<input value={memberA} onChange={e=>setMemberA(e.target.value)} placeholder="0x…" disabled={busy}/></label><label>商家收款地址<input value={payout} onChange={e=>setPayout(e.target.value)} placeholder="默认使用指定账户" disabled={busy}/></label></div>
@@ -113,5 +113,7 @@ export function DeployPage(){
       <button type="button" className="primary full-width" disabled={busy} onClick={()=>void deploy()}>{busy?'正在处理部署…':'开始部署两个合约'}</button>
       {statusMessage&&<p className={error?'error':'message'} role={error?'alert':'status'} aria-live="polite">{statusMessage}</p>}
       {done&&<div className="message" style={{marginTop:20}}><strong>合约已部署</strong><p>把此 JSON 保存为服务端的 <code>artifacts/acceptance/botchain-mainnet-manifest.json</code>，在项目目录运行 <code>npm run activate:botchain-mainnet -- artifacts/acceptance/botchain-mainnet-manifest.json</code>。脚本会核对 RPC 网络、两笔部署收据、合约代码和构造参数，再生成主网配置；Chain ID 677 与 968 测试网配置分开保留。</p><button className="secondary" onClick={()=>void copy()}>复制部署清单</button><pre>{manifest}</pre></div>}
-    </section><footer>主网交易不可逆，请逐笔核对 MetaMask 弹窗中的网络、合约和 Gas。</footer></main></div></div>;
+    </section>{!embedded&&<footer>主网交易不可逆，请逐笔核对 MetaMask 弹窗中的网络、合约和 Gas。</footer>}</main></div></div>;
 }
+
+export function DeployPage(){return <DeployPanel/>;}
